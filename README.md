@@ -1,12 +1,39 @@
 # RuntimeSpy
 
-RuntimeSpy records how often logical control-flow nodes in a Python project
-execute and exports the project as a graph. It only observes source roots
-selected by the user, so dependencies, the standard library, and unrelated
-packages stay out of the report.
+RuntimeSpy gives AI coding agents runtime evidence for finding and removing
+unused Python logic. It records how often every logical control-flow node in a
+selected source tree executes, then exports the project as a graph that an agent
+or visualization tool can inspect.
+
+## Why RuntimeSpy
+
+AI coding agents are good at adding code, but much less certain about removing
+it:
+
+1. Static analysis alone cannot resolve every dynamic Python behavior, so an
+   agent often cannot confidently decide whether a function, branch, or handler
+   is truly unused.
+2. Coding agents tend to overbuild. Defensive branches, speculative
+   abstractions, and never-used features accumulate because adding code feels
+   safer than deleting it.
+3. Every unnecessary line makes the repository harder to understand and costs
+   future agents more context tokens to read, reason about, and modify.
+
+RuntimeSpy adds the missing runtime signal. For the workloads you observe, it
+reports exact execution counts for functions, branches, loops, handlers, and
+basic blocks. A coding agent can combine this graph with tests, static analysis,
+and product knowledge to identify deletion candidates, verify them, and remove
+them with much higher confidence.
+
+The result is a smaller, simpler repository with less maintenance overhead and
+lower token cost for future AI-assisted development. RuntimeSpy only observes
+source roots selected by the user, so dependencies, the standard library, and
+unrelated packages stay out of the report.
 
 > RuntimeSpy reports code that was **not observed** during recorded runs. A zero
-> count is evidence of missing runtime coverage, not proof that code is dead.
+> count is exact for those runs, but it is evidence of missing runtime coverage,
+> not universal proof that the code is dead. Use representative workloads before
+> deleting code.
 
 ## Requirements
 
@@ -65,61 +92,166 @@ exits, RuntimeSpy writes the final counters to the same file automatically. The
 exporter falls back to SQLite when no process is active. Only one default JSON
 file is maintained.
 
-The JSON has a stable top-level shape:
+## JSON graph data contract
 
-```json
-{
-  "schema_version": 2,
-  "mode": "live",
-  "project": {"roots": ["/path/to/project"]},
-  "active_sessions": [],
-  "summary": {
-    "nodes": 42,
-    "edges": 51,
-    "executed_nodes": 35,
-    "unseen_nodes": 7
-  },
-  "graph": {
-    "type": "control_flow",
-    "nodes": [
-      {
-        "id": "node_8f4a...",
-        "type": "branch_true",
-        "path": "src/my_app/service.py",
-        "start_line": 12,
-        "start_column": 8,
-        "end_line": 14,
-        "end_column": 24,
-        "frequency": 1200
-      }
-    ],
-    "edges": [
-      {
-        "from": "node_condition",
-        "to": "node_8f4a...",
-        "type": "true",
-        "frequency": 1200
-      }
-    ]
-  }
-}
+The complete, frontend-ready sample is
+[`examples/runtime-export.example.json`](examples/runtime-export.example.json).
+It is a valid `final` export with every field included, not an abbreviated
+snippet. The sample models this source:
+
+```python
+def choose_plan(user):
+    if user.is_suspended:
+        return "blocked"
+    if user.is_premium:
+        return "pro"
+    else:
+        return "free"
+
+selected = choose_plan(current_user)
 ```
 
-Every graph node contains a stable ID, node type, source path, start/end line and
-column, owning qualified name, parent node, and `frequency`. Frequency means the
-number of times the logical node was entered since the current RuntimeSpy
-session started. A source-content change produces new node IDs so counters from
-different code versions cannot be confused.
+In the simulated run, `choose_plan` was called 100 times. The suspended branch
+was never entered, while the premium split was taken 72 times and the free split
+28 times. The sample therefore contains both hot nodes and two zero-frequency
+nodes that a UI can highlight as unobserved logic.
 
-`live` and `final` frequencies belong to the current process session and start
-at zero when `runtimespy.init()` runs. A later `stored` export represents the
-cumulative runs retained in the SQLite database.
+### Top-level export
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema_version` | integer | Version of the entire export envelope. Currently `2`. |
+| `generated_at` | string | UTC ISO 8601 time at which this snapshot was created. |
+| `mode` | string | `live`, `final`, or `stored`; see the mode table below. |
+| `project.roots` | string[] | Absolute project roots that contributed data. |
+| `summary` | object | Convenience copy of `graph.summary` for dashboards. |
+| `graph` | object | The control-flow graph and its file/scope hierarchy. |
+| `active_sessions` | object[] | Present in `live` mode. Describes every process merged into the snapshot. |
+| `session` | object | Present in `final` mode. Describes the process that just stopped. |
+| `latest_run` | object or null | Present in `stored` mode. Metadata for the newest persisted run. |
+
+Mode changes metadata and the counter window, but not the graph shape:
+
+| Mode | Produced when | Frequency window |
+| --- | --- | --- |
+| `live` | `runtimespy export` reaches one or more running processes | Current sessions; matching node and edge counts are summed across processes. |
+| `final` | An instrumented process exits or its session is stopped | The just-completed process session. |
+| `stored` | No live process is available and the CLI reads SQLite | Cumulative data retained from completed runs. |
+
+### `graph`
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `schema_version` | integer | Version of the nested graph contract. Currently `1`. |
+| `type` | string | Currently always `control_flow`. |
+| `summary.nodes` | integer | Total number of logical nodes. |
+| `summary.edges` | integer | Total number of graph edges. |
+| `summary.executed_nodes` | integer | Nodes whose `frequency` is greater than zero. |
+| `summary.unseen_nodes` | integer | Nodes whose `frequency` is zero. |
+| `hierarchy.files` | object[] | File index used for grouping and navigation. |
+| `nodes` | object[] | Flat node list. Use `id` as the primary key. |
+| `edges` | object[] | Flat directed edge list. `from` and `to` reference node IDs. |
+
+Each item in `hierarchy.files` has:
+
+| Field | Meaning |
+| --- | --- |
+| `path` | Project-relative source path; it matches `node.path`. |
+| `module` | Importable Python module name when one can be determined. |
+| `root_node_id` | The file's `module_entry` node. It can be `null` if the file could not be parsed. |
+| `node_ids` | IDs of every node belonging to this file. |
+| `scopes` | Lightweight index of module, class, and function entry nodes. |
+
+### Node contract
+
+Every item in `graph.nodes` contains all of these fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | Stable ID prefixed with `node_`. Use it as the render key. |
+| `type` | string | Logical role, such as `condition`, `branch_true`, or `basic_block`. |
+| `label` | string | Short display label generated from the source construct. |
+| `path` | string | Project-relative source file path. |
+| `module` | string | Python module containing the node. |
+| `qualname` | string | Owning function/class qualified name, or `<module>`. |
+| `parent_id` | string or null | Logical containment parent, not necessarily the previous execution node. |
+| `start_line` | integer | One-based first source line. |
+| `start_column` | integer | Zero-based first UTF-8 byte column. |
+| `end_line` | integer | One-based last source line. |
+| `end_column` | integer | Zero-based, exclusive ending UTF-8 byte column. |
+| `entry_line` | integer | Line whose runtime event supplies this node's counter. |
+| `frequency` | integer | Number of times the logical node was entered in the export's frequency window. |
+
+Node IDs are derived from the source path, source-content hash, qualified name,
+node type, label, and location. They remain stable across exports of unchanged
+source. Editing that source intentionally produces new IDs, which prevents a UI
+from silently joining counters from different code versions.
+
+Ranges may overlap. For example, a `branch_true` wrapper and the `basic_block`
+inside it can point at the same source lines. They represent different graph
+semantics and must not be deduplicated by location.
+
+Supported node types are grouped below:
+
+| Category | Node types |
+| --- | --- |
+| Scope and structure | `module_entry`, `class_entry`, `function_entry`, `definition`, `basic_block` |
+| Conditionals | `condition`, `branch_true`, `branch_false` |
+| Loops | `for_iteration`, `while_condition`, `loop_body`, `loop_else`, `loop_exit` |
+| Exceptions | `try_body`, `except_handler`, `try_else`, `finally_block` |
+| Pattern matching | `match_subject`, `match_case`, `match_unmatched` |
+| Context managers | `with_context` |
+
+A `basic_block` is one or more consecutive non-control statements. Its label is
+made from AST statement names such as `Assign`, `Expr`, `Return`, or `Raise`.
+
+### Edge contract
+
+Every item in `graph.edges` contains:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | Stable edge ID prefixed with `edge_`. |
+| `from` | string | Source node ID. |
+| `to` | string | Destination node ID. |
+| `type` | string | Control-flow or structural relationship. |
+| `frequency` | integer or null | Traversal count when measurable; `null` for structural/unmeasured edges. |
+
+| Edge type | Meaning |
+| --- | --- |
+| `entry` | Enter the first child node of a module, scope, branch, or region. |
+| `next` | Continue sequentially to the next logical node. |
+| `defines` | Connect a definition statement to its function/class scope. |
+| `true`, `false` | Select an `if` outcome. |
+| `iterate`, `loop_back`, `exit` | Enter a loop body, repeat it, or leave the loop. |
+| `exception`, `normal`, `finally` | Exception handler, normal `try` completion, or finalization path. |
+| `case`, `unmatched` | Select a `match` case or take no case. |
+
+Do not interpret `null` edge frequency as zero. It means that the edge is useful
+for topology but RuntimeSpy does not currently attach a reliable traversal
+counter to it. A numeric zero means the measured path was not observed.
+
+### Frequency and UI guidance
+
+`frequency` is a count, not elapsed time or CPU cost. It answers “how many times
+did this logic start?” A zero is evidence of missing runtime coverage, not proof
+that the code is dead; environment-specific and rare paths may simply be absent
+from the recorded workload.
+
+For a graph UI, a practical ingestion and display strategy is:
+
+1. Index `graph.nodes` by `id`, then resolve every edge through `from` and `to`.
+2. Use `hierarchy.files` for the file tree and `scopes` for function/class drill-down.
+3. Use control-flow `edges` for layout; use `parent_id` only for containment or collapsing groups.
+4. Color nodes by `frequency`. A `log1p(frequency)` scale works better than a linear scale when hot loops dominate the counts.
+5. Render `frequency === 0` as “unobserved” with a distinct neutral or warning treatment, not as confirmed dead code.
+6. Scale measured edge width by numeric `frequency`; render `null`-frequency structural edges with a thin or dashed style.
+7. For measured sibling edges, show ratios such as `72 / (72 + 28) = 72%` to explain branch behavior.
+8. Open the source viewer using `path` and the start/end coordinates when a node is selected.
 
 The first graph version recognizes module and function entry, basic blocks,
 `if/elif/else` branches, `for/while` loops, `try/except/else/finally`,
 `match/case`, `with`, definitions, returns, raises, breaks, and continues.
-Control-flow edges represent sequential execution, true/false selection, loop
-iteration and exit, exception paths, scope entry, and definition relationships.
 
 For a precise collection window, stop it explicitly:
 

@@ -1,0 +1,353 @@
+{
+  "schema_version": 2,
+  "generated_at": "2026-07-17T20:30:00+00:00",
+  "mode": "final",
+  "project": {
+    "roots": [
+      "/workspace/demo-shop"
+    ]
+  },
+  "session": {
+    "run_id": 42,
+    "pid": 31872,
+    "context": "api-smoke-test",
+    "started_at": "2026-07-17T20:29:51+00:00",
+    "command": "python -m shop.api",
+    "exit_code": 0
+  },
+  "summary": {
+    "nodes": 13,
+    "edges": 12,
+    "executed_nodes": 11,
+    "unseen_nodes": 2
+  },
+  "graph": {
+    "schema_version": 1,
+    "type": "control_flow",
+    "summary": {
+      "nodes": 13,
+      "edges": 12,
+      "executed_nodes": 11,
+      "unseen_nodes": 2
+    },
+    "hierarchy": {
+      "files": [
+        {
+          "path": "src/shop/pricing.py",
+          "module": "shop.pricing",
+          "root_node_id": "node_b9c47e96f73afad33a01",
+          "node_ids": [
+            "node_b9c47e96f73afad33a01",
+            "node_ebe21b28826d2408dbda",
+            "node_c11490c9542c42e031da",
+            "node_a74bdb17f4db2c34bcc1",
+            "node_8496c50571534d18046b",
+            "node_5fd5fb04db5be524dc95",
+            "node_1e4e2b1cfcdc7a53b972",
+            "node_c887687ac4041f3954fe",
+            "node_a1e830dbd841766167f2",
+            "node_f9100b17b83a9d4b032a",
+            "node_bc73a05defb5e62802ff",
+            "node_e370639d6f016fd5694c",
+            "node_cd6c9652144491bfbee3"
+          ],
+          "scopes": [
+            {
+              "id": "node_b9c47e96f73afad33a01",
+              "type": "module_entry",
+              "qualname": "<module>"
+            },
+            {
+              "id": "node_c11490c9542c42e031da",
+              "type": "function_entry",
+              "qualname": "choose_plan"
+            }
+          ]
+        }
+      ]
+    },
+    "nodes": [
+      {
+        "id": "node_b9c47e96f73afad33a01",
+        "type": "module_entry",
+        "label": "shop.pricing",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "<module>",
+        "parent_id": null,
+        "start_line": 1,
+        "start_column": 0,
+        "end_line": 9,
+        "end_column": 36,
+        "entry_line": 1,
+        "frequency": 1
+      },
+      {
+        "id": "node_ebe21b28826d2408dbda",
+        "type": "definition",
+        "label": "define choose_plan",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "<module>",
+        "parent_id": "node_b9c47e96f73afad33a01",
+        "start_line": 1,
+        "start_column": 0,
+        "end_line": 1,
+        "end_column": 22,
+        "entry_line": 1,
+        "frequency": 1
+      },
+      {
+        "id": "node_c11490c9542c42e031da",
+        "type": "function_entry",
+        "label": "choose_plan",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_ebe21b28826d2408dbda",
+        "start_line": 1,
+        "start_column": 0,
+        "end_line": 7,
+        "end_column": 21,
+        "entry_line": 2,
+        "frequency": 100
+      },
+      {
+        "id": "node_a74bdb17f4db2c34bcc1",
+        "type": "condition",
+        "label": "if",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_c11490c9542c42e031da",
+        "start_line": 2,
+        "start_column": 7,
+        "end_line": 2,
+        "end_column": 24,
+        "entry_line": 2,
+        "frequency": 100
+      },
+      {
+        "id": "node_8496c50571534d18046b",
+        "type": "branch_true",
+        "label": "true",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_a74bdb17f4db2c34bcc1",
+        "start_line": 3,
+        "start_column": 8,
+        "end_line": 3,
+        "end_column": 24,
+        "entry_line": 3,
+        "frequency": 0
+      },
+      {
+        "id": "node_5fd5fb04db5be524dc95",
+        "type": "basic_block",
+        "label": "Return",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_8496c50571534d18046b",
+        "start_line": 3,
+        "start_column": 8,
+        "end_line": 3,
+        "end_column": 24,
+        "entry_line": 3,
+        "frequency": 0
+      },
+      {
+        "id": "node_1e4e2b1cfcdc7a53b972",
+        "type": "branch_false",
+        "label": "false",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_a74bdb17f4db2c34bcc1",
+        "start_line": 2,
+        "start_column": 7,
+        "end_line": 2,
+        "end_column": 24,
+        "entry_line": 2,
+        "frequency": 100
+      },
+      {
+        "id": "node_c887687ac4041f3954fe",
+        "type": "condition",
+        "label": "if",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_c11490c9542c42e031da",
+        "start_line": 4,
+        "start_column": 7,
+        "end_line": 4,
+        "end_column": 22,
+        "entry_line": 4,
+        "frequency": 100
+      },
+      {
+        "id": "node_a1e830dbd841766167f2",
+        "type": "branch_true",
+        "label": "true",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_c887687ac4041f3954fe",
+        "start_line": 5,
+        "start_column": 8,
+        "end_line": 5,
+        "end_column": 20,
+        "entry_line": 5,
+        "frequency": 72
+      },
+      {
+        "id": "node_f9100b17b83a9d4b032a",
+        "type": "basic_block",
+        "label": "Return",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_a1e830dbd841766167f2",
+        "start_line": 5,
+        "start_column": 8,
+        "end_line": 5,
+        "end_column": 20,
+        "entry_line": 5,
+        "frequency": 72
+      },
+      {
+        "id": "node_bc73a05defb5e62802ff",
+        "type": "branch_false",
+        "label": "false",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_c887687ac4041f3954fe",
+        "start_line": 7,
+        "start_column": 8,
+        "end_line": 7,
+        "end_column": 21,
+        "entry_line": 7,
+        "frequency": 28
+      },
+      {
+        "id": "node_e370639d6f016fd5694c",
+        "type": "basic_block",
+        "label": "Return",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "choose_plan",
+        "parent_id": "node_bc73a05defb5e62802ff",
+        "start_line": 7,
+        "start_column": 8,
+        "end_line": 7,
+        "end_column": 21,
+        "entry_line": 7,
+        "frequency": 28
+      },
+      {
+        "id": "node_cd6c9652144491bfbee3",
+        "type": "basic_block",
+        "label": "Assign",
+        "path": "src/shop/pricing.py",
+        "module": "shop.pricing",
+        "qualname": "<module>",
+        "parent_id": "node_b9c47e96f73afad33a01",
+        "start_line": 9,
+        "start_column": 0,
+        "end_line": 9,
+        "end_column": 36,
+        "entry_line": 9,
+        "frequency": 1
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_e34bf57f2a5a0118e2c8",
+        "from": "node_ebe21b28826d2408dbda",
+        "to": "node_c11490c9542c42e031da",
+        "type": "defines",
+        "frequency": null
+      },
+      {
+        "id": "edge_5ac055fe815f65134cc3",
+        "from": "node_a74bdb17f4db2c34bcc1",
+        "to": "node_8496c50571534d18046b",
+        "type": "true",
+        "frequency": 0
+      },
+      {
+        "id": "edge_232bbeb5a6c3a1e92c41",
+        "from": "node_8496c50571534d18046b",
+        "to": "node_5fd5fb04db5be524dc95",
+        "type": "entry",
+        "frequency": null
+      },
+      {
+        "id": "edge_fb3884d3128f00c466db",
+        "from": "node_a74bdb17f4db2c34bcc1",
+        "to": "node_1e4e2b1cfcdc7a53b972",
+        "type": "false",
+        "frequency": 100
+      },
+      {
+        "id": "edge_9077cd5d59111a1fe4ae",
+        "from": "node_c887687ac4041f3954fe",
+        "to": "node_a1e830dbd841766167f2",
+        "type": "true",
+        "frequency": 72
+      },
+      {
+        "id": "edge_403102f963f3d1d85ee8",
+        "from": "node_a1e830dbd841766167f2",
+        "to": "node_f9100b17b83a9d4b032a",
+        "type": "entry",
+        "frequency": null
+      },
+      {
+        "id": "edge_95e4c4462b88d8d05a25",
+        "from": "node_c887687ac4041f3954fe",
+        "to": "node_bc73a05defb5e62802ff",
+        "type": "false",
+        "frequency": 28
+      },
+      {
+        "id": "edge_fc8dec81aa823edf2c1a",
+        "from": "node_bc73a05defb5e62802ff",
+        "to": "node_e370639d6f016fd5694c",
+        "type": "entry",
+        "frequency": null
+      },
+      {
+        "id": "edge_37097df019f261df4f54",
+        "from": "node_1e4e2b1cfcdc7a53b972",
+        "to": "node_c887687ac4041f3954fe",
+        "type": "next",
+        "frequency": null
+      },
+      {
+        "id": "edge_2ce332617369022f53fb",
+        "from": "node_c11490c9542c42e031da",
+        "to": "node_a74bdb17f4db2c34bcc1",
+        "type": "entry",
+        "frequency": null
+      },
+      {
+        "id": "edge_b4815c298b56128dd6fd",
+        "from": "node_ebe21b28826d2408dbda",
+        "to": "node_cd6c9652144491bfbee3",
+        "type": "next",
+        "frequency": null
+      },
+      {
+        "id": "edge_400d30e59c5388353199",
+        "from": "node_b9c47e96f73afad33a01",
+        "to": "node_ebe21b28826d2408dbda",
+        "type": "entry",
+        "frequency": null
+      }
+    ]
+  }
+}
