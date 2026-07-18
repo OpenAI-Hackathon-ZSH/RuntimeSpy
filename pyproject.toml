@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runtimespy"
+version = "0.1.0"
+description = "Runtime execution heatmaps for Python projects"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+  { name = "RuntimeSpy contributors" },
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Debuggers",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.scripts]
+runtimespy = "runtimespy.cli:main"
+
+[project.entry-points.pytest11]
+runtimespy = "runtimespy.pytest_plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
