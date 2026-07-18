@@ -10,6 +10,8 @@ import time
 from .analysis import snapshot_scope
 from .collector import RuntimeSpy
 from .config import ConfigError, load_config
+from .exporting import write_final_export
+from .live import OnDemandSnapshotServer
 from .storage import Storage
 
 
@@ -38,10 +40,17 @@ def pytest_configure(config):
 
         raise pytest.UsageError(str(exc)) from exc
     collector = RuntimeSpy(spy_config)
+    started = datetime.now(timezone.utc)
     collector.start()
+    snapshot_server = OnDemandSnapshotServer(
+        collector,
+        context=config.getoption("--runtimespy-context"),
+        started_at=started.isoformat(),
+    ).start()
     config._runtimespy_state = (
         collector,
-        datetime.now(timezone.utc),
+        snapshot_server,
+        started,
         time.perf_counter(),
     )
 
@@ -55,17 +64,31 @@ def pytest_unconfigure(config):
     state = getattr(config, "_runtimespy_state", None)
     if state is None:
         return
-    collector, started, started_clock = state
+    collector, snapshot_server, started, started_clock = state
+    snapshot_server.stop()
     collector.stop()
     exit_code = int(getattr(config, "_runtimespy_exitstatus", 0))
-    Storage(collector.config.database_path).record_run(
+    sources = snapshot_scope(collector.scope)
+    hits = collector.hits
+    command = shlex.join(["pytest", *sys.argv[1:]])
+    run_id = Storage(collector.config.database_path).record_run(
         started_at=started.isoformat(),
         duration_seconds=time.perf_counter() - started_clock,
-        command=shlex.join(["pytest", *sys.argv[1:]]),
+        command=command,
         context=config.getoption("--runtimespy-context"),
         exit_code=exit_code,
         python_version=sys.version,
-        hits=collector.hits,
-        sources=snapshot_scope(collector.scope),
+        hits=hits,
+        sources=sources,
+    )
+    write_final_export(
+        project_root=collector.config.project_root,
+        started_at=started.isoformat(),
+        command=command,
+        context=config.getoption("--runtimespy-context"),
+        run_id=run_id,
+        exit_code=exit_code,
+        sources=sources,
+        hits=hits,
     )
     del config._runtimespy_state

@@ -15,6 +15,7 @@ from .config import (
     load_config,
     write_config,
 )
+from .exporting import DEFAULT_EXPORT_FILE, ExportError, build_export, write_export
 from .report import write_report
 from .runner import RunnerError, run_session
 from .scope import ScopeMatcher
@@ -49,6 +50,16 @@ def _parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report", help="generate an HTML heatmap")
     report.add_argument("--output", default=".runtimespy/report.html")
     report.add_argument("--open", action="store_true", dest="open_report")
+
+    export = subparsers.add_parser("export", help="request and write current counters as JSON")
+    export.add_argument(
+        "--output",
+        "-o",
+        default=DEFAULT_EXPORT_FILE,
+        help=f"JSON path, or - for stdout (default: {DEFAULT_EXPORT_FILE})",
+    )
+    export.add_argument("--include-source", action="store_true", help="include source text in JSON")
+    export.add_argument("--compact", action="store_true", help="write compact JSON")
     return parser
 
 
@@ -112,6 +123,7 @@ def _run(args: argparse.Namespace) -> int:
         f"RuntimeSpy run #{result.run_id}: {result.hit_events} events across "
         f"{result.hit_lines} source lines (exit {result.exit_code})"
     )
+    print(f"Final JSON: {result.export_path}")
     return result.exit_code
 
 
@@ -128,6 +140,20 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export(args: argparse.Namespace) -> int:
+    destination: str | Path = args.output
+    if destination != "-":
+        destination = Path(destination)
+        if not destination.is_absolute():
+            destination = Path.cwd() / destination
+
+    payload = build_export(include_source=args.include_source)
+    path = write_export(payload, destination, compact=args.compact)
+    if path is not None:
+        print(f"Updated {path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
@@ -137,10 +163,10 @@ def main(argv: list[str] | None = None) -> int:
         "explain": _explain,
         "run": _run,
         "report": _report,
+        "export": _export,
     }
     try:
         return handlers[args.subcommand](args)
-    except (ConfigError, RunnerError) as exc:
+    except (ConfigError, ExportError, RunnerError) as exc:
         parser.error(str(exc))
     return 2
-

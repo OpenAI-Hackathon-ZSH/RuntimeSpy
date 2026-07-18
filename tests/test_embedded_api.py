@@ -22,6 +22,10 @@ class EmbeddedApiTests(unittest.TestCase):
             run_id = session.stop()
 
             self.assertGreater(run_id, 0)
+            self.assertEqual(
+                session.export_path, (root / ".runtimespy" / "export.json").resolve()
+            )
+            self.assertTrue(session.export_path.is_file())
             stored = Storage(root / ".runtimespy" / "runtime.db").load_sources()
             target_data = next(item for item in stored if item.path.endswith("target.py"))
             self.assertEqual(target_data.hits[1], 1)

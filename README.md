@@ -43,7 +43,49 @@ main()
 
 `init()` installs the monitor in the current process. Every subsequent line in
 the selected source roots is counted, and results are written automatically when
-the process exits. It does not rewrite target `.py` files.
+the process exits. It does not rewrite target `.py` files and does not write
+periodic snapshots.
+
+From another terminal, request the current counters at any time:
+
+```bash
+# Ask the running process for its current counters and update one JSON file
+runtimespy export
+
+# Choose a different output file
+runtimespy export --output runtime.json
+
+# Print JSON to stdout instead of writing a file
+runtimespy export --output -
+
+# Include current source text as well as counts
+runtimespy export --include-source
+```
+
+The command contacts the active RuntimeSpy process through a local on-demand
+endpoint and atomically overwrites `.runtimespy/export.json`. When the process
+exits, RuntimeSpy writes the final counters to the same file automatically. The
+exporter falls back to SQLite when no process is active. Only one default JSON
+file is maintained.
+
+The JSON has a stable top-level shape:
+
+```json
+{
+  "schema_version": 1,
+  "mode": "live",
+  "active_sessions": [],
+  "summary": {"files": 12, "events": 4819},
+  "files": [
+    {
+      "path": "src/my_app/service.py",
+      "module": "my_app.service",
+      "executable_lines": [1, 4, 5],
+      "hits": {"1": 1, "4": 2400, "5": 1200}
+    }
+  ]
+}
+```
 
 For a precise collection window, stop it explicitly:
 
@@ -69,7 +111,8 @@ pytest --runtimespy --runtimespy-context unit-tests
 
 RuntimeSpy stores cumulative counters in `.runtimespy/runtime.db`. If a source
 file changes, counters for that file are reset so old line numbers are not mixed
-with the new source.
+with the new source. The latest requested or completed snapshot is stored in
+`.runtimespy/export.json`.
 
 ## Configuration
 
@@ -113,6 +156,7 @@ runtimespy inspect    Preview included and excluded Python files
 runtimespy explain    Explain the decision for one source file or module
 runtimespy run        Record a Python script, module, or pytest run
 runtimespy report     Generate a self-contained HTML heatmap
+runtimespy export     Export live or stored counters as JSON
 ```
 
 RuntimeSpy deliberately executes Python targets in the current process so the

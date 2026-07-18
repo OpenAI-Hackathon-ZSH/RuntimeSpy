@@ -27,6 +27,9 @@ class CliTests(unittest.TestCase):
                     self.assertEqual(main(["inspect"]), 0)
                     self.assertEqual(main(["run", "--", "python", str(app)]), 0)
                     self.assertEqual(main(["report"]), 0)
+                    self.assertEqual(
+                        main(["export", "--output", ".runtimespy/export.json"]), 0
+                    )
             finally:
                 os.chdir(previous)
 
@@ -34,6 +37,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("Will instrument 2 Python file(s)", text)
             self.assertIn("RuntimeSpy run #1", text)
             self.assertTrue((root / ".runtimespy" / "report.html").is_file())
+            self.assertTrue((root / ".runtimespy" / "export.json").is_file())
 
 
 if __name__ == "__main__":

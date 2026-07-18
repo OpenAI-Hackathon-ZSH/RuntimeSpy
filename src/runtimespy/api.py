@@ -19,6 +19,8 @@ from .config import (
     detect_source_roots,
     load_config,
 )
+from .exporting import DEFAULT_EXPORT_FILE, write_final_export
+from .live import OnDemandSnapshotServer
 from .report import write_report
 from .storage import Storage
 
@@ -48,6 +50,8 @@ class RuntimeSession:
         *,
         context: str,
         report: bool | str,
+        export_file: str | None,
+        serve_export: bool,
     ):
         self.config = config
         self.context = context
@@ -57,6 +61,17 @@ class RuntimeSession:
         self.started_clock = time.perf_counter()
         self.run_id: int | None = None
         self.report_path: Path | None = None
+        self.export_path: Path | None = None
+        self.snapshot_server = (
+            OnDemandSnapshotServer(
+                self.collector,
+                context=context,
+                started_at=self.started_at.isoformat(),
+            )
+            if serve_export
+            else None
+        )
+        self.export_file = export_file
         self._stopped = False
 
     @property
@@ -65,6 +80,12 @@ class RuntimeSession:
 
     def start(self) -> "RuntimeSession":
         self.collector.start()
+        try:
+            if self.snapshot_server is not None:
+                self.snapshot_server.start()
+        except BaseException:
+            self.collector.stop()
+            raise
         return self
 
     def stop(self, *, exit_code: int = 0) -> int:
@@ -75,20 +96,36 @@ class RuntimeSession:
             assert self.run_id is not None
             return self.run_id
 
+        if self.snapshot_server is not None:
+            self.snapshot_server.stop()
         self.collector.stop()
         duration = time.perf_counter() - self.started_clock
         sources = snapshot_scope(self.collector.scope)
+        hits = self.collector.hits
         storage = Storage(self.config.database_path)
+        command = shlex.join([sys.executable, *sys.argv])
         self.run_id = storage.record_run(
             started_at=self.started_at.isoformat(),
             duration_seconds=duration,
-            command=shlex.join([sys.executable, *sys.argv]),
+            command=command,
             context=self.context,
             exit_code=exit_code,
             python_version=sys.version,
-            hits=self.collector.hits,
+            hits=hits,
             sources=sources,
         )
+        if self.export_file is not None:
+            self.export_path = write_final_export(
+                project_root=self.config.project_root,
+                destination=self.export_file,
+                started_at=self.started_at.isoformat(),
+                command=command,
+                context=self.context,
+                run_id=self.run_id,
+                exit_code=exit_code,
+                sources=sources,
+                hits=hits,
+            )
         if self.report:
             destination = (
                 Path(self.report)
@@ -126,13 +163,16 @@ def init(
     data_file: str = ".runtimespy/runtime.db",
     context: str = "runtime",
     report: bool | str = False,
+    export_file: str | None = DEFAULT_EXPORT_FILE,
+    serve_export: bool = True,
 ) -> RuntimeSession:
     """Install RuntimeSpy in the current process and start collecting.
 
     ``source`` defines the hard filesystem boundary. ``skip_modules`` and
     ``skip_paths`` remove modules or paths inside that boundary. When ``source``
     is omitted, existing RuntimeSpy config is loaded; if none exists, the best
-    detected source root is used.
+    detected source root is used. ``runtimespy export`` requests current counts
+    on demand; process exit writes final counts to ``export_file``.
 
     Example::
 
@@ -184,7 +224,13 @@ def init(
         exclude_paths=excluded_paths,
         data_file=data_file,
     )
-    session = RuntimeSession(config, context=context, report=report).start()
+    session = RuntimeSession(
+        config,
+        context=context,
+        report=report,
+        export_file=export_file,
+        serve_export=serve_export,
+    ).start()
     _active_session = session
     atexit.register(_atexit_stop, session)
     return session
@@ -196,4 +242,3 @@ def shutdown(*, exit_code: int = 0) -> int | None:
     if _active_session is None:
         return None
     return _active_session.stop(exit_code=exit_code)
-

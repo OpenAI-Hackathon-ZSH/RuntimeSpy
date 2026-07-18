@@ -15,6 +15,8 @@ from typing import Sequence
 from .analysis import snapshot_scope
 from .collector import RuntimeSpy
 from .config import RuntimeSpyConfig
+from .exporting import write_final_export
+from .live import OnDemandSnapshotServer
 from .storage import Storage
 
 
@@ -28,6 +30,7 @@ class RunResult:
     exit_code: int
     hit_events: int
     hit_lines: int
+    export_path: Path
 
 
 def _system_exit_code(exc: SystemExit) -> int:
@@ -108,8 +111,18 @@ def run_session(
     started_clock = time.perf_counter()
     exit_code = 1
     pending_error: BaseException | None = None
+    snapshot_server = OnDemandSnapshotServer(
+        collector,
+        context=context,
+        started_at=started.isoformat(),
+    )
 
     collector.start()
+    try:
+        snapshot_server.start()
+    except BaseException:
+        collector.stop()
+        raise
     try:
         try:
             exit_code = execute(command, config.project_root)
@@ -119,27 +132,40 @@ def run_session(
             pending_error = exc
             exit_code = 1
     finally:
+        snapshot_server.stop()
         collector.stop()
 
     duration = time.perf_counter() - started_clock
     sources = snapshot_scope(collector.scope)
+    hits = collector.hits
     storage = Storage(config.database_path)
+    command_text = shlex.join(command)
     run_id = storage.record_run(
         started_at=started.isoformat(),
         duration_seconds=duration,
-        command=shlex.join(command),
+        command=command_text,
         context=context,
         exit_code=exit_code,
         python_version=sys.version,
-        hits=collector.hits,
+        hits=hits,
         sources=sources,
+    )
+    export_path = write_final_export(
+        project_root=config.project_root,
+        started_at=started.isoformat(),
+        command=command_text,
+        context=context,
+        run_id=run_id,
+        exit_code=exit_code,
+        sources=sources,
+        hits=hits,
     )
     if pending_error is not None:
         raise pending_error
     return RunResult(
         run_id=run_id,
         exit_code=exit_code,
-        hit_events=sum(collector.hits.values()),
-        hit_lines=len(collector.hits),
+        hit_events=sum(hits.values()),
+        hit_lines=len(hits),
+        export_path=export_path,
     )
-
