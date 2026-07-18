@@ -111,12 +111,12 @@ def _merge_graphs(graphs: Iterable[dict[str, Any]]) -> dict[str, Any]:
                 continue
             edge_id = edge["id"]
             if edge_id not in edges:
-                edges[edge_id] = dict(edge)
-            elif edge.get("frequency") is not None:
-                current = edges[edge_id].get("frequency")
-                edges[edge_id]["frequency"] = int(current or 0) + int(
-                    edge["frequency"]
-                )
+                edges[edge_id] = {
+                    **edge,
+                    "frequency": int(edge.get("frequency") or 0),
+                }
+            else:
+                edges[edge_id]["frequency"] += int(edge.get("frequency") or 0)
         hierarchy = graph.get("hierarchy", {})
         for item in hierarchy.get("files", []):
             if isinstance(item, dict) and isinstance(item.get("path"), str):

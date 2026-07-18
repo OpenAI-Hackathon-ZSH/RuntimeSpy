@@ -215,7 +215,7 @@ Every item in `graph.edges` contains:
 | `from` | string | Source node ID. |
 | `to` | string | Destination node ID. |
 | `type` | string | Control-flow or structural relationship. |
-| `frequency` | integer or null | Traversal count when measurable; `null` for structural/unmeasured edges. |
+| `frequency` | integer | Traversal count when measurable; otherwise `0`. RuntimeSpy never emits `null` here. |
 
 | Edge type | Meaning |
 | --- | --- |
@@ -227,9 +227,12 @@ Every item in `graph.edges` contains:
 | `exception`, `normal`, `finally` | Exception handler, normal `try` completion, or finalization path. |
 | `case`, `unmatched` | Select a `match` case or take no case. |
 
-Do not interpret `null` edge frequency as zero. It means that the edge is useful
-for topology but RuntimeSpy does not currently attach a reliable traversal
-counter to it. A numeric zero means the measured path was not observed.
+RuntimeSpy emits `0` instead of `null` for edges without a reliable traversal
+counter. For measured control edges (`true`, `false`, `iterate`, `exit`,
+`exception`, `case`, and `unmatched`), zero means that the path was not observed.
+For structural edges such as `entry`, `next`, `defines`, `loop_back`, `normal`,
+and `finally`, zero only means “no edge-level counter”; the edge still defines
+the graph topology.
 
 ### Frequency and UI guidance
 
@@ -245,7 +248,7 @@ For a graph UI, a practical ingestion and display strategy is:
 3. Use control-flow `edges` for layout; use `parent_id` only for containment or collapsing groups.
 4. Color nodes by `frequency`. A `log1p(frequency)` scale works better than a linear scale when hot loops dominate the counts.
 5. Render `frequency === 0` as “unobserved” with a distinct neutral or warning treatment, not as confirmed dead code.
-6. Scale measured edge width by numeric `frequency`; render `null`-frequency structural edges with a thin or dashed style.
+6. Scale measured control-edge width by `frequency`; render structural edge types with a thin or dashed style.
 7. For measured sibling edges, show ratios such as `72 / (72 + 28) = 72%` to explain branch behavior.
 8. Open the source viewer using `path` and the start/end coordinates when a node is selected.
 

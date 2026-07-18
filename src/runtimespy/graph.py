@@ -201,7 +201,7 @@ class _FileGraphBuilder:
         target: str,
         edge_type: str,
         *,
-        frequency: int | None = None,
+        frequency: int = 0,
     ) -> None:
         key = (source, target, edge_type)
         if key in self._edge_keys:

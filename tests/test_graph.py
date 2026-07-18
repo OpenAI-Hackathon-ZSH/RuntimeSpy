@@ -132,6 +132,13 @@ class GraphTests(unittest.TestCase):
         false_edge = next(edge for edge in first["edges"] if edge["type"] == "false")
         self.assertEqual(true_edge["frequency"], 2)
         self.assertEqual(false_edge["frequency"], 1)
+        self.assertTrue(
+            all(isinstance(edge["frequency"], int) for edge in first["edges"])
+        )
+        defines_edge = next(
+            edge for edge in first["edges"] if edge["type"] == "defines"
+        )
+        self.assertEqual(defines_edge["frequency"], 0)
 
     def test_runtime_export_contains_project_graph(self):
         with tempfile.TemporaryDirectory() as temporary:
