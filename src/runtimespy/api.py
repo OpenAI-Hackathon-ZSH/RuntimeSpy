@@ -102,6 +102,8 @@ class RuntimeSession:
         duration = time.perf_counter() - self.started_clock
         sources = snapshot_scope(self.collector.scope)
         hits = self.collector.hits
+        starts = self.collector.starts
+        branches = self.collector.branches
         storage = Storage(self.config.database_path)
         command = shlex.join([sys.executable, *sys.argv])
         self.run_id = storage.record_run(
@@ -112,6 +114,8 @@ class RuntimeSession:
             exit_code=exit_code,
             python_version=sys.version,
             hits=hits,
+            starts=starts,
+            branches=branches,
             sources=sources,
         )
         if self.export_file is not None:
@@ -125,6 +129,8 @@ class RuntimeSession:
                 exit_code=exit_code,
                 sources=sources,
                 hits=hits,
+                starts=starts,
+                branches=branches,
             )
         if self.report:
             destination = (

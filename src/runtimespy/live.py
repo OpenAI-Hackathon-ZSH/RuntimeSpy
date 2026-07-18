@@ -15,6 +15,7 @@ import uuid
 
 from .analysis import snapshot_scope
 from .collector import RuntimeSpy
+from .graph import graph_from_snapshots
 
 
 SESSION_SCHEMA_VERSION = 1
@@ -34,11 +35,9 @@ class _SnapshotRequestHandler(socketserver.StreamRequestHandler):
             else:
                 response = {
                     "ok": True,
-                    "snapshot": owner.snapshot(
-                        include_source=bool(request.get("include_source", False))
-                    ),
+                    "snapshot": owner.snapshot(),
                 }
-        except (OSError, UnicodeError, json.JSONDecodeError, AttributeError) as exc:
+        except Exception as exc:
             response = {"ok": False, "error": str(exc)}
         self.wfile.write(
             json.dumps(response, ensure_ascii=False, separators=(",", ":")).encode(
@@ -66,38 +65,11 @@ class OnDemandSnapshotServer:
         self._server: _ThreadingServer | None = None
         self._thread: threading.Thread | None = None
 
-    def snapshot(self, *, include_source: bool = False) -> dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         hits = self.collector.hits
-        hits_by_file: dict[str, dict[str, int]] = {}
-        for (path, line), count in hits.items():
-            hits_by_file.setdefault(path, {})[str(line)] = count
-
-        files: list[dict[str, Any]] = []
-        for item in snapshot_scope(self.collector.scope):
-            file_data: dict[str, Any] = {
-                "path": item.path,
-                "module": item.module,
-                "content_hash": item.content_hash,
-                "executable_lines": list(item.executable_lines),
-                "hits": hits_by_file.pop(item.path, {}),
-                "parse_error": item.parse_error,
-            }
-            if include_source:
-                file_data["source"] = item.source
-            files.append(file_data)
-
-        for path, file_hits in sorted(hits_by_file.items()):
-            files.append(
-                {
-                    "path": path,
-                    "module": "",
-                    "content_hash": "",
-                    "executable_lines": sorted(int(line) for line in file_hits),
-                    "hits": file_hits,
-                    "parse_error": None,
-                    **({"source": None} if include_source else {}),
-                }
-            )
+        starts = self.collector.starts
+        branches = self.collector.branches
+        sources = snapshot_scope(self.collector.scope)
         return {
             "schema_version": SESSION_SCHEMA_VERSION,
             "session_id": self.session_id,
@@ -107,7 +79,7 @@ class OnDemandSnapshotServer:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "project_root": str(self.collector.config.project_root),
             "database_path": str(self.collector.config.database_path),
-            "files": files,
+            "graph": graph_from_snapshots(sources, hits, starts, branches),
         }
 
     def _write_registry(self, host: str, port: int) -> None:

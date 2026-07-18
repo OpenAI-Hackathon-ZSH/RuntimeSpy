@@ -30,11 +30,15 @@ class ExportTests(unittest.TestCase):
             live = build_export(root)
             self.assertEqual(live["mode"], "live")
             self.assertEqual(live["active_sessions"][0]["context"], "live-test")
-            target_data = next(
-                item for item in live["files"] if item["path"].endswith("target.py")
+            target_node = next(
+                item
+                for item in live["graph"]["nodes"]
+                if item["path"].endswith("target.py")
+                and item["type"] == "basic_block"
             )
-            self.assertEqual(target_data["hits"]["1"], 1)
-            self.assertEqual(target_data["hits"]["2"], 1)
+            self.assertEqual(target_node["start_line"], 1)
+            self.assertEqual(target_node["end_line"], 2)
+            self.assertEqual(target_node["frequency"], 1)
 
             write_export(live, destination)
             self.assertEqual(
@@ -46,19 +50,26 @@ class ExportTests(unittest.TestCase):
             self.assertEqual(final["mode"], "final")
             self.assertEqual(final["session"]["context"], "live-test")
             final_target = next(
-                item for item in final["files"] if item["path"].endswith("target.py")
+                item
+                for item in final["graph"]["nodes"]
+                if item["path"].endswith("target.py")
+                and item["type"] == "basic_block"
             )
-            self.assertEqual(final_target["hits"]["2"], 1)
+            self.assertEqual(final_target["frequency"], 1)
             self.assertEqual(
                 list((root / ".runtimespy").glob("*.json")), [destination]
             )
 
-            stored = build_export(root, include_source=True)
+            stored = build_export(root)
             self.assertEqual(stored["mode"], "stored")
             stored_target = next(
-                item for item in stored["files"] if item["path"].endswith("target.py")
+                item
+                for item in stored["graph"]["nodes"]
+                if item["path"].endswith("target.py")
+                and item["type"] == "basic_block"
             )
-            self.assertIn("value += 1", stored_target["source"])
+            self.assertEqual(stored_target["frequency"], 1)
+            self.assertEqual(stored_target["id"], final_target["id"])
 
 
 if __name__ == "__main__":

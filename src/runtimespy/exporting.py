@@ -11,12 +11,13 @@ import sys
 from typing import Any, Iterable, Mapping, TextIO
 
 from .analysis import SourceSnapshot
-from .collector import LineKey
+from .collector import BranchKey, CodeStartKey, LineKey
 from .config import ConfigError, load_config
+from .graph import graph_from_snapshots, graph_from_stored
 from .storage import Storage
 
 
-EXPORT_SCHEMA_VERSION = 1
+EXPORT_SCHEMA_VERSION = 2
 DEFAULT_EXPORT_FILE = ".runtimespy/export.json"
 
 
@@ -65,9 +66,7 @@ def _read_registries(start: Path) -> list[dict[str, Any]]:
     return []
 
 
-def _request_snapshot(
-    registry: dict[str, Any], *, include_source: bool
-) -> dict[str, Any] | None:
+def _request_snapshot(registry: dict[str, Any]) -> dict[str, Any] | None:
     try:
         host = str(registry["host"])
         port = int(registry["port"])
@@ -75,12 +74,11 @@ def _request_snapshot(
             {
                 "token": registry["token"],
                 "action": "snapshot",
-                "include_source": include_source,
             },
             separators=(",", ":"),
         ).encode("utf-8") + b"\n"
         chunks: list[bytes] = []
-        with socket.create_connection((host, port), timeout=3.0) as connection:
+        with socket.create_connection((host, port), timeout=30.0) as connection:
             connection.sendall(request)
             connection.shutdown(socket.SHUT_WR)
             while True:
@@ -95,31 +93,60 @@ def _request_snapshot(
     return snapshot if isinstance(snapshot, dict) else None
 
 
-def _merge_live_snapshots(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+def _merge_graphs(graphs: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    nodes: dict[str, dict[str, Any]] = {}
+    edges: dict[str, dict[str, Any]] = {}
     files: dict[str, dict[str, Any]] = {}
-    total_events = 0
-    for session in snapshots:
-        for item in session.get("files", []):
-            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+    for graph in graphs:
+        for node in graph.get("nodes", []):
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str):
                 continue
-            path = item["path"]
-            target = files.setdefault(
-                path,
-                {
-                    "path": path,
-                    "module": item.get("module", ""),
-                    "content_hash": item.get("content_hash", ""),
-                    "executable_lines": item.get("executable_lines", []),
-                    "hits": {},
-                    "parse_error": item.get("parse_error"),
-                },
-            )
-            if "source" in item and "source" not in target:
-                target["source"] = item["source"]
-            for line, count in item.get("hits", {}).items():
-                numeric_count = int(count)
-                target["hits"][str(line)] = target["hits"].get(str(line), 0) + numeric_count
-                total_events += numeric_count
+            node_id = node["id"]
+            if node_id not in nodes:
+                nodes[node_id] = dict(node)
+            else:
+                nodes[node_id]["frequency"] += int(node.get("frequency", 0))
+        for edge in graph.get("edges", []):
+            if not isinstance(edge, dict) or not isinstance(edge.get("id"), str):
+                continue
+            edge_id = edge["id"]
+            if edge_id not in edges:
+                edges[edge_id] = dict(edge)
+            elif edge.get("frequency") is not None:
+                current = edges[edge_id].get("frequency")
+                edges[edge_id]["frequency"] = int(current or 0) + int(
+                    edge["frequency"]
+                )
+        hierarchy = graph.get("hierarchy", {})
+        for item in hierarchy.get("files", []):
+            if isinstance(item, dict) and isinstance(item.get("path"), str):
+                files.setdefault(item["path"], item)
+
+    node_values = [nodes[node_id] for node_id in sorted(nodes)]
+    edge_values = [edges[edge_id] for edge_id in sorted(edges)]
+    return {
+        "schema_version": 1,
+        "type": "control_flow",
+        "summary": {
+            "nodes": len(node_values),
+            "edges": len(edge_values),
+            "executed_nodes": sum(
+                1 for node in node_values if node.get("frequency", 0) > 0
+            ),
+            "unseen_nodes": sum(
+                1 for node in node_values if node.get("frequency", 0) == 0
+            ),
+        },
+        "hierarchy": {"files": [files[path] for path in sorted(files)]},
+        "nodes": node_values,
+        "edges": edge_values,
+    }
+
+
+def _merge_live_snapshots(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    graph = _merge_graphs(
+        item["graph"] for item in snapshots if isinstance(item.get("graph"), dict)
+    )
 
     sessions = [
         {
@@ -135,13 +162,21 @@ def _merge_live_snapshots(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
         }
         for item in snapshots
     ]
+    project_roots = sorted(
+        {
+            str(item["project_root"])
+            for item in snapshots
+            if isinstance(item.get("project_root"), str)
+        }
+    )
     return {
         "schema_version": EXPORT_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "live",
+        "project": {"roots": project_roots},
         "active_sessions": sessions,
-        "summary": {"files": len(files), "events": total_events},
-        "files": [files[path] for path in sorted(files)],
+        "summary": graph["summary"],
+        "graph": graph,
     }
 
 
@@ -160,25 +195,11 @@ def _find_database(start: Path, registries: list[dict[str, Any]]) -> Path:
     raise ExportError("no running RuntimeSpy session or stored runtime database found")
 
 
-def _stored_export(database: Path, *, include_source: bool) -> dict[str, Any]:
+def _stored_export(database: Path) -> dict[str, Any]:
     storage = Storage(database)
     sources = storage.load_sources()
     latest = storage.latest_run()
-    files: list[dict[str, Any]] = []
-    total_events = 0
-    for item in sources:
-        hits = {str(line): count for line, count in sorted(item.hits.items())}
-        total_events += sum(hits.values())
-        file_data: dict[str, Any] = {
-            "path": item.path,
-            "module": item.module,
-            "executable_lines": list(item.executable_lines),
-            "hits": hits,
-            "parse_error": item.parse_error,
-        }
-        if include_source:
-            file_data["source"] = item.source
-        files.append(file_data)
+    graph = graph_from_stored(sources)
     latest_data = None
     if latest is not None:
         latest_data = {
@@ -192,56 +213,24 @@ def _stored_export(database: Path, *, include_source: bool) -> dict[str, Any]:
         "schema_version": EXPORT_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "stored",
+        "project": {"roots": [str(database.parent.parent)]},
         "latest_run": latest_data,
-        "summary": {"files": len(files), "events": total_events},
-        "files": files,
+        "summary": graph["summary"],
+        "graph": graph,
     }
 
 
-def build_export(
-    start: Path | str | None = None, *, include_source: bool = False
-) -> dict[str, Any]:
+def build_export(start: Path | str | None = None) -> dict[str, Any]:
     root = Path(start or Path.cwd())
     registries = _read_registries(root)
     snapshots = [
         snapshot
         for registry in registries
-        if (snapshot := _request_snapshot(registry, include_source=include_source))
-        is not None
+        if (snapshot := _request_snapshot(registry)) is not None
     ]
     if snapshots:
         return _merge_live_snapshots(snapshots)
-    return _stored_export(
-        _find_database(root, registries), include_source=include_source
-    )
-
-
-def _files_for_run(
-    sources: Iterable[SourceSnapshot],
-    hits: Mapping[LineKey, int],
-    *,
-    include_source: bool,
-) -> tuple[list[dict[str, Any]], int]:
-    hits_by_file: dict[str, dict[str, int]] = {}
-    for (path, line), count in hits.items():
-        hits_by_file.setdefault(path, {})[str(line)] = count
-    files: list[dict[str, Any]] = []
-    total_events = 0
-    for item in sources:
-        file_hits = hits_by_file.pop(item.path, {})
-        total_events += sum(file_hits.values())
-        file_data: dict[str, Any] = {
-            "path": item.path,
-            "module": item.module,
-            "content_hash": item.content_hash,
-            "executable_lines": list(item.executable_lines),
-            "hits": file_hits,
-            "parse_error": item.parse_error,
-        }
-        if include_source:
-            file_data["source"] = item.source
-        files.append(file_data)
-    return files, total_events
+    return _stored_export(_find_database(root, registries))
 
 
 def write_final_export(
@@ -255,15 +244,15 @@ def write_final_export(
     exit_code: int,
     sources: Iterable[SourceSnapshot],
     hits: Mapping[LineKey, int],
-    include_source: bool = False,
+    starts: Mapping[CodeStartKey, int],
+    branches: Mapping[BranchKey, int],
 ) -> Path:
-    files, total_events = _files_for_run(
-        sources, hits, include_source=include_source
-    )
+    graph = graph_from_snapshots(sources, hits, starts, branches)
     payload = {
         "schema_version": EXPORT_SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "mode": "final",
+        "project": {"roots": [str(project_root)]},
         "session": {
             "run_id": run_id,
             "pid": os.getpid(),
@@ -272,8 +261,8 @@ def write_final_export(
             "command": command,
             "exit_code": exit_code,
         },
-        "summary": {"files": len(files), "events": total_events},
-        "files": files,
+        "summary": graph["summary"],
+        "graph": graph,
     }
     target = Path(destination)
     if not target.is_absolute():

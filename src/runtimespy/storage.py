@@ -1,4 +1,4 @@
-"""SQLite persistence for source snapshots and cumulative line counters."""
+"""SQLite persistence for source snapshots and runtime counters."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sqlite3
 from typing import Iterable, Mapping
 
 from .analysis import SourceSnapshot
-from .collector import LineKey
+from .collector import BranchKey, CodeStartKey, LineKey
 
 
 SCHEMA = """
@@ -46,6 +46,52 @@ CREATE TABLE IF NOT EXISTS line_totals (
     count INTEGER NOT NULL,
     PRIMARY KEY (path, line)
 );
+
+CREATE TABLE IF NOT EXISTS code_starts (
+    run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    qualname TEXT NOT NULL,
+    first_line INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (run_id, path, qualname, first_line)
+);
+
+CREATE TABLE IF NOT EXISTS code_start_totals (
+    path TEXT NOT NULL,
+    qualname TEXT NOT NULL,
+    first_line INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (path, qualname, first_line)
+);
+
+CREATE TABLE IF NOT EXISTS branch_transitions (
+    run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    qualname TEXT NOT NULL,
+    source_line INTEGER NOT NULL,
+    source_column INTEGER NOT NULL,
+    destination_line INTEGER NOT NULL,
+    destination_column INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (
+        run_id, path, qualname, source_line, source_column,
+        destination_line, destination_column
+    )
+);
+
+CREATE TABLE IF NOT EXISTS branch_transition_totals (
+    path TEXT NOT NULL,
+    qualname TEXT NOT NULL,
+    source_line INTEGER NOT NULL,
+    source_column INTEGER NOT NULL,
+    destination_line INTEGER NOT NULL,
+    destination_column INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (
+        path, qualname, source_line, source_column,
+        destination_line, destination_column
+    )
+);
 """
 
 
@@ -57,6 +103,8 @@ class StoredSource:
     executable_lines: tuple[int, ...]
     parse_error: str | None
     hits: dict[int, int]
+    starts: dict[str, int]
+    branches: dict[tuple[str, int, int, int, int], int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +137,8 @@ class Storage:
         exit_code: int,
         python_version: str,
         hits: Mapping[LineKey, int],
+        starts: Mapping[CodeStartKey, int],
+        branches: Mapping[BranchKey, int],
         sources: Iterable[SourceSnapshot],
     ) -> int:
         source_list = list(sources)
@@ -117,6 +167,12 @@ class Storage:
             for stale_path in stored_paths - current_paths:
                 connection.execute("DELETE FROM source_files WHERE path = ?", (stale_path,))
                 connection.execute("DELETE FROM line_totals WHERE path = ?", (stale_path,))
+                connection.execute(
+                    "DELETE FROM code_start_totals WHERE path = ?", (stale_path,)
+                )
+                connection.execute(
+                    "DELETE FROM branch_transition_totals WHERE path = ?", (stale_path,)
+                )
 
             for item in source_list:
                 previous = connection.execute(
@@ -124,6 +180,13 @@ class Storage:
                 ).fetchone()
                 if previous is not None and previous[0] != item.content_hash:
                     connection.execute("DELETE FROM line_totals WHERE path = ?", (item.path,))
+                    connection.execute(
+                        "DELETE FROM code_start_totals WHERE path = ?", (item.path,)
+                    )
+                    connection.execute(
+                        "DELETE FROM branch_transition_totals WHERE path = ?",
+                        (item.path,),
+                    )
                 connection.execute(
                     """
                     INSERT INTO source_files (
@@ -158,6 +221,75 @@ class Storage:
                     """,
                     (path, line, count),
                 )
+
+            for (path, qualname, first_line), count in starts.items():
+                connection.execute(
+                    """
+                    INSERT INTO code_starts (
+                        run_id, path, qualname, first_line, count
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (run_id, path, qualname, first_line, count),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO code_start_totals (
+                        path, qualname, first_line, count
+                    ) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(path, qualname, first_line)
+                    DO UPDATE SET count = count + excluded.count
+                    """,
+                    (path, qualname, first_line, count),
+                )
+
+            for key, count in branches.items():
+                (
+                    path,
+                    qualname,
+                    source_line,
+                    source_column,
+                    destination_line,
+                    destination_column,
+                ) = key
+                connection.execute(
+                    """
+                    INSERT INTO branch_transitions (
+                        run_id, path, qualname, source_line, source_column,
+                        destination_line, destination_column, count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        run_id,
+                        path,
+                        qualname,
+                        source_line,
+                        source_column,
+                        destination_line,
+                        destination_column,
+                        count,
+                    ),
+                )
+                connection.execute(
+                    """
+                    INSERT INTO branch_transition_totals (
+                        path, qualname, source_line, source_column,
+                        destination_line, destination_column, count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(
+                        path, qualname, source_line, source_column,
+                        destination_line, destination_column
+                    ) DO UPDATE SET count = count + excluded.count
+                    """,
+                    (
+                        path,
+                        qualname,
+                        source_line,
+                        source_column,
+                        destination_line,
+                        destination_column,
+                        count,
+                    ),
+                )
         return run_id
 
     def load_sources(self) -> list[StoredSource]:
@@ -175,6 +307,29 @@ class Storage:
                 "SELECT path, line, count FROM line_totals"
             ):
                 totals.setdefault(path, {})[int(line)] = int(count)
+            starts: dict[str, dict[str, int]] = {}
+            for path, qualname, count in connection.execute(
+                """
+                SELECT path, qualname, SUM(count)
+                FROM code_start_totals
+                GROUP BY path, qualname
+                """
+            ):
+                starts.setdefault(path, {})[qualname] = int(count)
+            branches: dict[
+                str, dict[tuple[str, int, int, int, int], int]
+            ] = {}
+            for row in connection.execute(
+                """
+                SELECT path, qualname, source_line, source_column,
+                       destination_line, destination_column, count
+                FROM branch_transition_totals
+                """
+            ):
+                path, qualname, source_line, source_column, dest_line, dest_column, count = row
+                branches.setdefault(path, {})[
+                    (qualname, source_line, source_column, dest_line, dest_column)
+                ] = int(count)
         return [
             StoredSource(
                 path=row[0],
@@ -183,6 +338,8 @@ class Storage:
                 executable_lines=tuple(json.loads(row[3])),
                 parse_error=row[4],
                 hits=totals.get(row[0], {}),
+                starts=starts.get(row[0], {}),
+                branches=branches.get(row[0], {}),
             )
             for row in rows
         ]

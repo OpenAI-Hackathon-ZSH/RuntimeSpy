@@ -70,6 +70,8 @@ def pytest_unconfigure(config):
     exit_code = int(getattr(config, "_runtimespy_exitstatus", 0))
     sources = snapshot_scope(collector.scope)
     hits = collector.hits
+    starts = collector.starts
+    branches = collector.branches
     command = shlex.join(["pytest", *sys.argv[1:]])
     run_id = Storage(collector.config.database_path).record_run(
         started_at=started.isoformat(),
@@ -79,6 +81,8 @@ def pytest_unconfigure(config):
         exit_code=exit_code,
         python_version=sys.version,
         hits=hits,
+        starts=starts,
+        branches=branches,
         sources=sources,
     )
     write_final_export(
@@ -90,5 +94,7 @@ def pytest_unconfigure(config):
         exit_code=exit_code,
         sources=sources,
         hits=hits,
+        starts=starts,
+        branches=branches,
     )
     del config._runtimespy_state

@@ -138,6 +138,8 @@ def run_session(
     duration = time.perf_counter() - started_clock
     sources = snapshot_scope(collector.scope)
     hits = collector.hits
+    starts = collector.starts
+    branches = collector.branches
     storage = Storage(config.database_path)
     command_text = shlex.join(command)
     run_id = storage.record_run(
@@ -148,6 +150,8 @@ def run_session(
         exit_code=exit_code,
         python_version=sys.version,
         hits=hits,
+        starts=starts,
+        branches=branches,
         sources=sources,
     )
     export_path = write_final_export(
@@ -159,6 +163,8 @@ def run_session(
         exit_code=exit_code,
         sources=sources,
         hits=hits,
+        starts=starts,
+        branches=branches,
     )
     if pending_error is not None:
         raise pending_error

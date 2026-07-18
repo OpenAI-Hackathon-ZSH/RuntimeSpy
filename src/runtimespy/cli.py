@@ -58,7 +58,6 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_EXPORT_FILE,
         help=f"JSON path, or - for stdout (default: {DEFAULT_EXPORT_FILE})",
     )
-    export.add_argument("--include-source", action="store_true", help="include source text in JSON")
     export.add_argument("--compact", action="store_true", help="write compact JSON")
     return parser
 
@@ -147,7 +146,7 @@ def _export(args: argparse.Namespace) -> int:
         if not destination.is_absolute():
             destination = Path.cwd() / destination
 
-    payload = build_export(include_source=args.include_source)
+    payload = build_export()
     path = write_export(payload, destination, compact=args.compact)
     if path is not None:
         print(f"Updated {path}")

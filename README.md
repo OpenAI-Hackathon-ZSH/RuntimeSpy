@@ -1,9 +1,9 @@
 # RuntimeSpy
 
-RuntimeSpy records how often lines in a Python project execute and turns those
-counts into a source-code heatmap. It only observes source roots selected by the
-user, so dependencies, the standard library, and unrelated packages stay out of
-the report.
+RuntimeSpy records how often logical control-flow nodes in a Python project
+execute and exports the project as a graph. It only observes source roots
+selected by the user, so dependencies, the standard library, and unrelated
+packages stay out of the report.
 
 > RuntimeSpy reports code that was **not observed** during recorded runs. A zero
 > count is evidence of missing runtime coverage, not proof that code is dead.
@@ -57,9 +57,6 @@ runtimespy export --output runtime.json
 
 # Print JSON to stdout instead of writing a file
 runtimespy export --output -
-
-# Include current source text as well as counts
-runtimespy export --include-source
 ```
 
 The command contacts the active RuntimeSpy process through a local on-demand
@@ -72,20 +69,57 @@ The JSON has a stable top-level shape:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "mode": "live",
+  "project": {"roots": ["/path/to/project"]},
   "active_sessions": [],
-  "summary": {"files": 12, "events": 4819},
-  "files": [
-    {
-      "path": "src/my_app/service.py",
-      "module": "my_app.service",
-      "executable_lines": [1, 4, 5],
-      "hits": {"1": 1, "4": 2400, "5": 1200}
-    }
-  ]
+  "summary": {
+    "nodes": 42,
+    "edges": 51,
+    "executed_nodes": 35,
+    "unseen_nodes": 7
+  },
+  "graph": {
+    "type": "control_flow",
+    "nodes": [
+      {
+        "id": "node_8f4a...",
+        "type": "branch_true",
+        "path": "src/my_app/service.py",
+        "start_line": 12,
+        "start_column": 8,
+        "end_line": 14,
+        "end_column": 24,
+        "frequency": 1200
+      }
+    ],
+    "edges": [
+      {
+        "from": "node_condition",
+        "to": "node_8f4a...",
+        "type": "true",
+        "frequency": 1200
+      }
+    ]
+  }
 }
 ```
+
+Every graph node contains a stable ID, node type, source path, start/end line and
+column, owning qualified name, parent node, and `frequency`. Frequency means the
+number of times the logical node was entered since the current RuntimeSpy
+session started. A source-content change produces new node IDs so counters from
+different code versions cannot be confused.
+
+`live` and `final` frequencies belong to the current process session and start
+at zero when `runtimespy.init()` runs. A later `stored` export represents the
+cumulative runs retained in the SQLite database.
+
+The first graph version recognizes module and function entry, basic blocks,
+`if/elif/else` branches, `for/while` loops, `try/except/else/finally`,
+`match/case`, `with`, definitions, returns, raises, breaks, and continues.
+Control-flow edges represent sequential execution, true/false selection, loop
+iteration and exit, exception paths, scope entry, and definition relationships.
 
 For a precise collection window, stop it explicitly:
 
