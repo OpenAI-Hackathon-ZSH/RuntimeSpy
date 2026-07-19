@@ -3,13 +3,12 @@ import tempfile
 import unittest
 
 from runtimespy.config import RuntimeSpyConfig
-from runtimespy.report import write_report
 from runtimespy.runner import run_session
 from runtimespy.storage import Storage
 
 
 class EndToEndTests(unittest.TestCase):
-    def test_run_store_and_report(self):
+    def test_run_and_store_runtime_data(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source = root / "src" / "demo"
@@ -37,12 +36,6 @@ class EndToEndTests(unittest.TestCase):
             observed = next(item for item in files if item.path.endswith("program.py"))
             self.assertGreater(observed.hits.get(2, 0), 0)
             self.assertEqual(observed.hits.get(4, 0), 0)
-
-            report = write_report(files, storage.latest_run(), root / "report.html")
-            html = report.read_text(encoding="utf-8")
-            self.assertIn("RuntimeSpy execution heatmap", html)
-            self.assertIn("program.py", html)
-            self.assertIn("unseen", html)
 
 
 if __name__ == "__main__":

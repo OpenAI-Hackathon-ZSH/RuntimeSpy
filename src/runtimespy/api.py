@@ -26,7 +26,6 @@ from .exporting import DEFAULT_EXPORT_FILE, write_final_export
 from .graph import graph_from_snapshots
 from .integrations import install_optional_integrations
 from .live import OnDemandSnapshotServer
-from .report import write_report
 from .storage import Storage
 
 
@@ -65,20 +64,17 @@ class RuntimeSession:
         *,
         context: str,
         endpoint: str | None,
-        report: bool | str,
         export_file: str | None,
         serve_export: bool,
     ):
         self.config = config
         self.context = context
         self.endpoint = transport.normalize_endpoint(endpoint)
-        self.report = report
         self.collector = RuntimeSpy(config)
         self.sources: tuple[SourceSnapshot, ...] = ()
         self.started_at = datetime.now(timezone.utc)
         self.started_clock = time.perf_counter()
         self.run_id: int | None = None
-        self.report_path: Path | None = None
         self.export_path: Path | None = None
         self.snapshot_server = (
             OnDemandSnapshotServer(
@@ -205,17 +201,6 @@ class RuntimeSession:
                 starts=starts,
                 branches=branches,
             )
-        if self.report:
-            destination = (
-                Path(self.report)
-                if isinstance(self.report, str)
-                else Path(".runtimespy/report.html")
-            )
-            if not destination.is_absolute():
-                destination = self.config.project_root / destination
-            self.report_path = write_report(
-                storage.load_sources(), storage.latest_run(), destination
-            )
         self._stopped = True
         if _active_session is self:
             _active_session = None
@@ -242,7 +227,6 @@ def init(
     data_file: str = ".runtimespy/runtime.db",
     context: str = "runtime",
     endpoint: str | None = None,
-    report: bool | str = False,
     export_file: str | None = DEFAULT_EXPORT_FILE,
     serve_export: bool = True,
 ) -> RuntimeSession:
@@ -265,7 +249,6 @@ def init(
             source=["src"],
             endpoint="https://runtime.example/api",
             skip_modules=["my_app.generated.*"],
-            report=True,
         )
     """
 
@@ -312,7 +295,6 @@ def init(
         config,
         context=context,
         endpoint=endpoint,
-        report=report,
         export_file=export_file,
         serve_export=serve_export,
     ).start()

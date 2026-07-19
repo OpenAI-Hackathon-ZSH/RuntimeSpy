@@ -28,7 +28,7 @@ them with much higher confidence.
 The result is a smaller, simpler repository with less maintenance overhead and
 lower token cost for future AI-assisted development. RuntimeSpy only observes
 source roots selected by the user, so dependencies, the standard library, and
-unrelated packages stay out of the report.
+unrelated packages stay out of the graph.
 
 > RuntimeSpy reports code that was **not observed** during recorded runs. A zero
 > count is exact for those runs, but it is evidence of missing runtime coverage,
@@ -69,7 +69,6 @@ runtimespy.init(
         "my_app.generated",
         "my_app.generated.*",
     ],
-    report=True,
 )
 
 from my_app import main
@@ -325,7 +324,6 @@ runtimespy inspect
 runtimespy run -- python app.py
 runtimespy run -- python -m my_app
 runtimespy run --context unit-tests -- pytest -q
-runtimespy report --open
 pytest --runtimespy --runtimespy-context unit-tests
 ```
 
@@ -375,7 +373,6 @@ runtimespy init       Create project configuration
 runtimespy inspect    Preview included and excluded Python files
 runtimespy explain    Explain the decision for one source file or module
 runtimespy run        Record a Python script, module, or pytest run
-runtimespy report     Generate a self-contained HTML heatmap
 runtimespy export     Export live or stored counters as JSON
 ```
 

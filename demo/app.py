@@ -12,7 +12,6 @@ runtimespy.init(
     project_root=PROJECT_ROOT,
     context="flask-server",
     endpoint=os.environ.get("RUNTIMESPY_REPORT_ENDPOINT"),
-    report=False,
 )
 
 from commerce_demo import create_app  # noqa: E402

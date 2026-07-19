@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import sys
-import webbrowser
 
 from .config import (
     ConfigError,
@@ -16,10 +15,8 @@ from .config import (
     write_config,
 )
 from .exporting import DEFAULT_EXPORT_FILE, ExportError, build_export, write_export
-from .report import write_report
 from .runner import RunnerError, run_session
 from .scope import ScopeMatcher
-from .storage import Storage
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -46,10 +43,6 @@ def _parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="run and record a Python target")
     run.add_argument("--context", default="default")
     run.add_argument("command", nargs=argparse.REMAINDER)
-
-    report = subparsers.add_parser("report", help="generate an HTML heatmap")
-    report.add_argument("--output", default=".runtimespy/report.html")
-    report.add_argument("--open", action="store_true", dest="open_report")
 
     export = subparsers.add_parser("export", help="request and write current counters as JSON")
     export.add_argument(
@@ -126,19 +119,6 @@ def _run(args: argparse.Namespace) -> int:
     return result.exit_code
 
 
-def _report(args: argparse.Namespace) -> int:
-    config = load_config()
-    storage = Storage(config.database_path)
-    destination = Path(args.output)
-    if not destination.is_absolute():
-        destination = config.project_root / destination
-    path = write_report(storage.load_sources(), storage.latest_run(), destination)
-    print(f"Created {path}")
-    if args.open_report:
-        webbrowser.open(path.as_uri())
-    return 0
-
-
 def _export(args: argparse.Namespace) -> int:
     destination: str | Path = args.output
     if destination != "-":
@@ -161,7 +141,6 @@ def main(argv: list[str] | None = None) -> int:
         "inspect": _inspect,
         "explain": _explain,
         "run": _run,
-        "report": _report,
         "export": _export,
     }
     try:

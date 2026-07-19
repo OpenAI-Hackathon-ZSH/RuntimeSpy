@@ -9,7 +9,7 @@ from runtimespy.cli import main
 
 
 class CliTests(unittest.TestCase):
-    def test_init_inspect_run_and_report(self):
+    def test_init_inspect_run_and_export(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = root / "src" / "sample"
@@ -26,7 +26,6 @@ class CliTests(unittest.TestCase):
                     self.assertEqual(main(["init", "--source", "src"]), 0)
                     self.assertEqual(main(["inspect"]), 0)
                     self.assertEqual(main(["run", "--", "python", str(app)]), 0)
-                    self.assertEqual(main(["report"]), 0)
                     self.assertEqual(
                         main(["export", "--output", ".runtimespy/export.json"]), 0
                     )
@@ -36,7 +35,6 @@ class CliTests(unittest.TestCase):
             text = output.getvalue()
             self.assertIn("Will instrument 2 Python file(s)", text)
             self.assertIn("RuntimeSpy run #1", text)
-            self.assertTrue((root / ".runtimespy" / "report.html").is_file())
             self.assertTrue((root / ".runtimespy" / "export.json").is_file())
 
 

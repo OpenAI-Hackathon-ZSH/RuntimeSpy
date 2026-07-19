@@ -1,4 +1,4 @@
-"""Static source inventory used by the report."""
+"""Static source inventory used by graph exports."""
 
 from __future__ import annotations
 
@@ -83,4 +83,3 @@ def snapshot(decision: ScopeDecision) -> SourceSnapshot:
 
 def snapshot_scope(scope: ScopeMatcher) -> list[SourceSnapshot]:
     return [snapshot(item) for item in scope.discover() if item.included]
-
