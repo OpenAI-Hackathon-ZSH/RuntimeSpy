@@ -5,6 +5,7 @@ from __future__ import annotations
 from http.client import HTTPException
 import json
 import logging
+import sys
 from typing import Any
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -38,12 +39,21 @@ def normalize_endpoint(endpoint: str | None) -> str | None:
 
 
 def _post_json(endpoint: str | None, path: str, payload: dict[str, Any]) -> bool:
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     if endpoint is None:
+        print(
+            f"[RuntimeSpy report] HTTP disabled path={path} body={body}",
+            file=sys.stderr,
+            flush=True,
+        )
         return False
 
     url = f"{endpoint}{path}"
-    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    logger.info("RuntimeSpy report POST %s body=%s", url, body)
+    print(
+        f"[RuntimeSpy report] POST {url} body={body}",
+        file=sys.stderr,
+        flush=True,
+    )
     request = Request(
         url,
         data=body.encode("utf-8"),

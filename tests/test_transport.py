@@ -1,3 +1,5 @@
+from contextlib import redirect_stderr
+import io
 import json
 import unittest
 from unittest.mock import MagicMock, patch
@@ -11,10 +13,11 @@ class TransportTests(unittest.TestCase):
         response = MagicMock()
         response.__enter__.return_value = response
         payload = {"value": "graph"}
+        report_output = io.StringIO()
 
         with (
             patch.object(transport, "urlopen", return_value=response) as open_url,
-            self.assertLogs("runtimespy.transport", level="INFO") as report_logs,
+            redirect_stderr(report_output),
         ):
             self.assertTrue(
                 transport.send_graph(
@@ -47,17 +50,18 @@ class TransportTests(unittest.TestCase):
 
         self.assertIn(
             'body={"value":"graph"}',
-            report_logs.output[0],
+            report_output.getvalue(),
         )
         self.assertIn(
             'body={"Frequency":[]}',
-            report_logs.output[1],
+            report_output.getvalue(),
         )
 
     def test_reporting_failure_does_not_break_the_application(self):
         with (
             patch.object(transport, "urlopen", side_effect=URLError("offline")),
             self.assertLogs("runtimespy.transport", level="WARNING"),
+            redirect_stderr(io.StringIO()),
         ):
             sent = transport.send_frequency(
                 {"Frequency": []},
@@ -66,9 +70,17 @@ class TransportTests(unittest.TestCase):
         self.assertFalse(sent)
 
     def test_missing_endpoint_disables_http_reporting(self):
-        with patch.object(transport, "urlopen") as open_url:
+        report_output = io.StringIO()
+        with (
+            patch.object(transport, "urlopen") as open_url,
+            redirect_stderr(report_output),
+        ):
             self.assertFalse(transport.send_graph({}, endpoint=None))
         open_url.assert_not_called()
+        self.assertIn(
+            "HTTP disabled path=/report/full_graph body={}",
+            report_output.getvalue(),
+        )
 
     def test_endpoint_is_validated_and_normalized(self):
         self.assertEqual(

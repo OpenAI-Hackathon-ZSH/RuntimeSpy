@@ -39,8 +39,8 @@ unrelated packages stay out of the graph.
 
 [`demo/`](demo/) contains a realistic in-memory commerce API with catalog,
 pricing, inventory, risk, order, fulfillment, refund, and administration flows.
-Its orchestration script starts an instrumented Flask server, sends real HTTP
-traffic, stops the process, and verifies the resulting graph JSON. See
+The server and traffic generator run as two independent commands, so traffic can
+be replayed without restarting the instrumented service. See
 [`demo/README.md`](demo/README.md) for setup and usage.
 
 ## Requirements
@@ -118,7 +118,9 @@ Both requests use `POST` with `Content-Type: application/json`. Reporting is
 best-effort with a five-second timeout: a network or reporting-service failure
 is logged but never fails the instrumented application request. Authentication,
 retry, and buffering are not implemented yet. Before every POST, RuntimeSpy logs
-the destination URL and the complete JSON request body at `INFO` level.
+the destination URL and the complete JSON request body to stderr. When HTTP
+reporting is disabled, RuntimeSpy still prints every generated report body with
+an `HTTP disabled` marker.
 
 The per-request payload has this exact shape:
 

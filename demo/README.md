@@ -27,8 +27,8 @@ uv sync --extra test
 ```
 
 `uv` reads `pyproject.toml`, creates `.venv`, and installs Flask and the test
-dependencies. The orchestration script adds the repository's `src` directory to
-`PYTHONPATH`, so it always runs the local RuntimeSpy source.
+dependencies. `app.py` loads RuntimeSpy and the demo package directly from this
+checkout, so the command always exercises the current source files.
 
 The equivalent `pip` setup is:
 
@@ -39,92 +39,54 @@ python -m pip install -e ..
 python -m pip install -e ".[test]"
 ```
 
-## One command: server, traffic, graph
-
-```bash
-uv run python scripts/run_demo.py
-```
-
-`run_demo.py` performs the complete real-process flow:
-
-1. chooses an available localhost port;
-2. starts `app.py` as a separate instrumented Flask server process;
-3. waits for `/health` to report ready;
-4. sends real HTTP requests covering successful, rejected, replayed, reviewed,
-   shipped, refunded, cancelled, administrative, and maintenance-mode paths;
-5. sends `SIGINT` to stop the server cleanly;
-6. waits for the server process's RuntimeSpy exit handler to overwrite:
-
-```text
-demo/.runtimespy/export.json
-```
-
-The script validates the new JSON and prints its node/edge summary. That file can
-be given directly to the graph UI described in the repository's main README.
-
-Set `RUNTIMESPY_REPORT_ENDPOINT` to enable HTTP reporting. When the server
-starts, RuntimeSpy POSTs the complete zero-frequency graph to
-`$RUNTIMESPY_REPORT_ENDPOINT/report/full_graph`. Each completed HTTP request
-POSTs that request's node counts to `$RUNTIMESPY_REPORT_ENDPOINT/report/node`.
-RuntimeSpy automatically wraps Flask when `init()` runs, so the demo application
-contains no RuntimeSpy request hooks or middleware. Final process-wide JSON
-export continues to happen normally when the server stops.
-
-```bash
-RUNTIMESPY_REPORT_ENDPOINT=http://127.0.0.1:9000 uv run python scripts/run_demo.py
-```
-
-Choose a fixed port when needed:
-
-```bash
-uv run python scripts/run_demo.py --port 5050
-```
-
-## Open Swagger UI
-
-Use `--swagger` to run the full traffic suite, open the interactive API docs in
-your default browser, and keep the server alive while you try requests manually:
-
-```bash
-uv run python scripts/run_demo.py --swagger
-```
-
-The script prints and opens a URL such as:
-
-```text
-http://127.0.0.1:54321/docs/
-```
-
-Swagger UI is served locally by the Flask process. Its OpenAPI 3.1 document is
-available at `/openapi.json`. The docs include request schemas, example values,
-query/path/header parameters, role descriptions, and every demo endpoint. Press
-Enter in the terminal when finished; the server exits and RuntimeSpy writes the
-final graph JSON.
-
-## Run server and traffic separately
-
-Start the instrumented server in the first terminal:
+## 1. Start the demo server
 
 ```bash
 uv run python app.py
 ```
 
-With the default port, Swagger is available at
+The instrumented Flask server listens at `http://127.0.0.1:5000`. RuntimeSpy
+starts before `commerce_demo` is imported and observes only `demo/src`.
+
+Set a reporting endpoint when needed:
+
+```bash
+RUNTIMESPY_REPORT_ENDPOINT=http://127.0.0.1:9000 uv run python app.py
+```
+
+At startup RuntimeSpy POSTs the complete zero-frequency graph to
+`$RUNTIMESPY_REPORT_ENDPOINT/report/full_graph`. Each completed HTTP request
+POSTs that request's node counts to `$RUNTIMESPY_REPORT_ENDPOINT/report/node`.
+Without this environment variable, HTTP reporting is disabled.
+
+Choose a different server port with:
+
+```bash
+RUNTIMESPY_DEMO_PORT=5050 uv run python app.py
+```
+
+Swagger is available at
 [`http://127.0.0.1:5000/docs/`](http://127.0.0.1:5000/docs/) and the raw spec at
 [`http://127.0.0.1:5000/openapi.json`](http://127.0.0.1:5000/openapi.json).
 
-RuntimeSpy starts before `commerce_demo` is imported, observes only `demo/src`,
-and writes the final graph when the process exits. In a second terminal, send the
-same real HTTP traffic suite:
+## 2. Send simulated traffic
+
+Keep the server running. In a second terminal, from the `demo` directory, run:
 
 ```bash
-cd demo
 uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:5000
 ```
 
-Stop the server with `Ctrl-C`; its exit handler refreshes
-`.runtimespy/export.json`. The traffic process never initializes RuntimeSpy—the
-server process owns all counters and the final export.
+The traffic script only sends requests. It does not start or stop the server. It
+covers successful, rejected, replayed, reviewed, shipped, refunded, cancelled,
+administrative, and maintenance-mode paths.
+
+The server stays alive after traffic completes, so the script can be run again
+or requests can be sent manually through Swagger. Stop the server separately
+with `Ctrl-C`; its exit handler refreshes `.runtimespy/export.json`.
+
+The traffic process never initializes RuntimeSpy—the server process owns all
+counters and the final export.
 
 You can also request an on-demand snapshot while the server is still running:
 
