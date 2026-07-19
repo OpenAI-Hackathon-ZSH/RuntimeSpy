@@ -12,6 +12,7 @@ from .api import (
     init,
     shutdown,
 )
+from .api import RuntimeRequest, RuntimeSession, begin_request, end_request, init, shutdown
 from .collector import RuntimeSpy
 from .config import RuntimeSpyConfig, load_config
 

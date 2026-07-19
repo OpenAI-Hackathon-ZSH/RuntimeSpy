@@ -63,12 +63,14 @@ class RuntimeSession:
         config: RuntimeSpyConfig,
         *,
         context: str,
+        report: bool | str,
         endpoint: str | None,
         export_file: str | None,
         serve_export: bool,
     ):
         self.config = config
         self.context = context
+        self.report = report
         self.endpoint = transport.normalize_endpoint(endpoint)
         self.collector = RuntimeSpy(config)
         self.sources: tuple[SourceSnapshot, ...] = ()
@@ -145,7 +147,7 @@ class RuntimeSession:
             counts.starts,
             counts.branches,
         )
-        payload: dict[str, object] = {
+        request.payload = {
             "Frequency": [
                 {"node": node["id"], "count": node["frequency"]}
                 for node in graph["nodes"]
@@ -153,9 +155,8 @@ class RuntimeSession:
             ]
         }
         request.finished = True
-        request.payload = payload
-        transport.send_frequency(payload, endpoint=self.endpoint)
-        return payload
+        transport.send_frequency(request.payload, endpoint=self.endpoint)
+        return request.payload
 
     def stop(self, *, exit_code: int = 0) -> int:
         """Stop collection, persist counters, and return the recorded run ID."""
@@ -226,6 +227,7 @@ def init(
     project_root: str | Path | None = None,
     data_file: str = ".runtimespy/runtime.db",
     context: str = "runtime",
+    report: bool | str = False,
     endpoint: str | None = None,
     export_file: str | None = DEFAULT_EXPORT_FILE,
     serve_export: bool = True,
@@ -294,6 +296,7 @@ def init(
     session = RuntimeSession(
         config,
         context=context,
+        report=report,
         endpoint=endpoint,
         export_file=export_file,
         serve_export=serve_export,
