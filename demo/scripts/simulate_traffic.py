@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import time
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -15,6 +16,39 @@ class HttpResult:
     status_code: int
     body: Any
     headers: dict[str, str]
+
+
+@dataclass(slots=True)
+class PacedCaller:
+    """Send requests one at a time with a fixed pause between them."""
+
+    interval_seconds: float
+    sent_requests: int = 0
+
+    def __post_init__(self) -> None:
+        if self.interval_seconds < 0:
+            raise ValueError("request interval cannot be negative")
+
+    def __call__(
+        self,
+        base_url: str,
+        method: str,
+        path: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> HttpResult:
+        if self.sent_requests:
+            time.sleep(self.interval_seconds)
+        result = call(
+            base_url,
+            method,
+            path,
+            payload=payload,
+            headers=headers,
+        )
+        self.sent_requests += 1
+        return result
 
 
 def call(
@@ -53,7 +87,9 @@ def call(
     return HttpResult(status_code, body, response_headers)
 
 
-def run_scenario(base_url: str) -> None:
+def run_scenario(base_url: str, *, interval_seconds: float = 2.0) -> None:
+    call = PacedCaller(interval_seconds)
+
     call(base_url, "GET", "/health")
     call(base_url, "GET", "/openapi.json")
     call(base_url, "GET", "/api/v1/catalog/products")
@@ -201,8 +237,16 @@ def run_scenario(base_url: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", default="http://127.0.0.1:5000")
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="seconds between requests (default: 2.0; use 0 for no delay)",
+    )
     args = parser.parse_args()
-    run_scenario(args.base_url)
+    if args.interval < 0:
+        parser.error("--interval cannot be negative")
+    run_scenario(args.base_url, interval_seconds=args.interval)
     print("\nTraffic complete. Stop the server to write its final RuntimeSpy JSON.")
 
 

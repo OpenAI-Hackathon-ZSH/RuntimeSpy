@@ -39,7 +39,12 @@ python -m pip install -e ..
 python -m pip install -e ".[test]"
 ```
 
-## 1. Start the demo server
+## Run the demo and traffic in two terminals
+
+The server and traffic generator are independent processes. Open two terminals
+in the `demo` directory; do not stop the server after starting it.
+
+### Terminal 1: start the demo server
 
 ```bash
 uv run python app.py
@@ -69,7 +74,7 @@ Swagger is available at
 [`http://127.0.0.1:5000/docs/`](http://127.0.0.1:5000/docs/) and the raw spec at
 [`http://127.0.0.1:5000/openapi.json`](http://127.0.0.1:5000/openapi.json).
 
-## 2. Send simulated traffic
+### Terminal 2: send simulated traffic
 
 Keep the server running. In a second terminal, from the `demo` directory, run:
 
@@ -79,7 +84,15 @@ uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:5000
 
 The traffic script only sends requests. It does not start or stop the server. It
 covers successful, rejected, replayed, reviewed, shipped, refunded, cancelled,
-administrative, and maintenance-mode paths.
+administrative, and maintenance-mode paths. Requests are sent one at a time with
+a two-second interval by default. Change the pacing with `--interval SECONDS`,
+or use `--interval 0` to send them without a delay:
+
+```bash
+uv run python scripts/simulate_traffic.py \
+  --base-url http://127.0.0.1:5000 \
+  --interval 2
+```
 
 The server stays alive after traffic completes, so the script can be run again
 or requests can be sent manually through Swagger. Stop the server separately
