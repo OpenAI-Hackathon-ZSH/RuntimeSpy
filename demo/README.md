@@ -62,12 +62,17 @@ demo/.runtimespy/export.json
 The script validates the new JSON and prints its node/edge summary. That file can
 be given directly to the graph UI described in the repository's main README.
 
-When the server starts, RuntimeSpy also calls the empty `send_graph` transport
-hook with the complete zero-frequency graph. Each completed HTTP request calls
-the empty `send_frequency` hook with only that request's node counts. RuntimeSpy
-automatically wraps Flask when `init()` runs, so the demo application contains
-no RuntimeSpy request hooks or middleware. Final process-wide JSON export
-continues to happen normally when the server stops.
+Set `RUNTIMESPY_REPORT_ENDPOINT` to enable HTTP reporting. When the server
+starts, RuntimeSpy POSTs the complete zero-frequency graph to
+`$RUNTIMESPY_REPORT_ENDPOINT/report/full_graph`. Each completed HTTP request
+POSTs that request's node counts to `$RUNTIMESPY_REPORT_ENDPOINT/report/node`.
+RuntimeSpy automatically wraps Flask when `init()` runs, so the demo application
+contains no RuntimeSpy request hooks or middleware. Final process-wide JSON
+export continues to happen normally when the server stops.
+
+```bash
+RUNTIMESPY_REPORT_ENDPOINT=http://127.0.0.1:9000 uv run python scripts/run_demo.py
+```
 
 Choose a fixed port when needed:
 

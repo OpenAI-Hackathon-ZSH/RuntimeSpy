@@ -11,6 +11,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 runtimespy.init(
     project_root=PROJECT_ROOT,
     context="flask-server",
+    endpoint=os.environ.get("RUNTIMESPY_REPORT_ENDPOINT"),
     report=False,
 )
 

@@ -41,11 +41,16 @@ class RequestStreamTests(unittest.TestCase):
                     source="src",
                     project_root=root,
                     context="request-stream-test",
+                    endpoint="https://collector.example/api/",
                     serve_export=False,
                 )
                 initial = send_graph.call_args.args[0]
 
                 install_integrations.assert_called_once_with()
+                self.assertEqual(
+                    send_graph.call_args.kwargs["endpoint"],
+                    "https://collector.example/api",
+                )
                 self.assertEqual(initial["schema_version"], 2)
                 self.assertEqual(initial["mode"], "initial")
                 self.assertEqual(initial["summary"]["executed_nodes"], 0)
@@ -71,6 +76,12 @@ class RequestStreamTests(unittest.TestCase):
 
                 self.assertEqual(first_payload, second_payload)
                 self.assertEqual(send_frequency.call_count, 2)
+                self.assertTrue(
+                    all(
+                        call.kwargs["endpoint"] == "https://collector.example/api"
+                        for call in send_frequency.call_args_list
+                    )
+                )
                 frequencies = first_payload["Frequency"]
                 self.assertTrue(frequencies)
                 self.assertTrue(all(item["count"] > 0 for item in frequencies))

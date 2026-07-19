@@ -64,6 +64,7 @@ import runtimespy
 
 runtimespy.init(
     source=["src"],
+    endpoint="https://runtime.example/api",
     skip_modules=[
         "my_app.generated",
         "my_app.generated.*",
@@ -78,8 +79,9 @@ main()
 
 `init()` installs the monitor in the current process. Every subsequent line in
 the selected source roots is counted, and results are written automatically when
-the process exits. It does not rewrite target `.py` files and does not write
-periodic snapshots.
+the process exits. `endpoint` is optional; without it HTTP reporting is disabled.
+RuntimeSpy does not rewrite target `.py` files and does not write periodic
+snapshots.
 
 From another terminal, request the current counters at any time:
 
@@ -102,21 +104,21 @@ file is maintained.
 
 ## Startup and per-request events
 
-RuntimeSpy also defines a two-message protocol for a future graph service:
+When `endpoint` is configured, RuntimeSpy reports two types of events:
 
 1. `init()` immediately builds the complete project graph with every node and
-   edge `frequency` set to `0`, then calls
-   `runtimespy.transport.send_graph(payload)`.
+   edge `frequency` set to `0`, then POSTs it to
+   `{endpoint}/report/full_graph`.
 2. `init()` automatically detects Flask and wraps its WSGI request boundary.
    Before application handling RuntimeSpy starts a request-local counter; after
    the request returns or raises, it calls
-   `runtimespy.transport.send_frequency(payload)` with only the nodes entered by
-   that request. The target Flask application does not need hooks or middleware.
+   `{endpoint}/report/node` with only the nodes entered by that request. The
+   target Flask application does not need hooks or middleware.
 
-The two transport functions currently have empty bodies. They define the API
-boundary and payloads, but deliberately do not perform HTTP, retries,
-authentication, or buffering yet. They can later be implemented in
-`src/runtimespy/transport.py` without changing instrumentation code.
+Both requests use `POST` with `Content-Type: application/json`. Reporting is
+best-effort with a five-second timeout: a network or reporting-service failure
+is logged but never fails the instrumented application request. Authentication,
+retry, and buffering are not implemented yet.
 
 The per-request payload has this exact shape:
 
@@ -182,7 +184,7 @@ Mode changes metadata and the counter window, but not the graph shape:
 
 | Mode | Produced when | Frequency window |
 | --- | --- | --- |
-| `initial` | `init()` calls the empty `send_graph` transport hook | Zeroed topology; every node and edge frequency is `0`. |
+| `initial` | `init()` POSTs to `{endpoint}/report/full_graph` when reporting is enabled | Zeroed topology; every node and edge frequency is `0`. |
 | `live` | `runtimespy export` reaches one or more running processes | Current sessions; matching node and edge counts are summed across processes. |
 | `final` | An instrumented process exits or its session is stopped | The just-completed process session. |
 | `stored` | No live process is available and the CLI reads SQLite | Cumulative data retained from completed runs. |

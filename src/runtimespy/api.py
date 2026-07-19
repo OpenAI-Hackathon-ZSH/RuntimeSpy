@@ -64,12 +64,14 @@ class RuntimeSession:
         config: RuntimeSpyConfig,
         *,
         context: str,
+        endpoint: str | None,
         report: bool | str,
         export_file: str | None,
         serve_export: bool,
     ):
         self.config = config
         self.context = context
+        self.endpoint = transport.normalize_endpoint(endpoint)
         self.report = report
         self.collector = RuntimeSpy(config)
         self.sources: tuple[SourceSnapshot, ...] = ()
@@ -113,7 +115,8 @@ class RuntimeSession:
                     },
                     "summary": graph["summary"],
                     "graph": graph,
-                }
+                },
+                endpoint=self.endpoint,
             )
             install_optional_integrations()
             if self.snapshot_server is not None:
@@ -155,7 +158,7 @@ class RuntimeSession:
         }
         request.finished = True
         request.payload = payload
-        transport.send_frequency(payload)
+        transport.send_frequency(payload, endpoint=self.endpoint)
         return payload
 
     def stop(self, *, exit_code: int = 0) -> int:
@@ -238,6 +241,7 @@ def init(
     project_root: str | Path | None = None,
     data_file: str = ".runtimespy/runtime.db",
     context: str = "runtime",
+    endpoint: str | None = None,
     report: bool | str = False,
     export_file: str | None = DEFAULT_EXPORT_FILE,
     serve_export: bool = True,
@@ -247,9 +251,11 @@ def init(
     ``source`` defines the hard filesystem boundary. ``skip_modules`` and
     ``skip_paths`` remove modules or paths inside that boundary. When ``source``
     is omitted, existing RuntimeSpy config is loaded; if none exists, the best
-    detected source root is used. Startup calls ``transport.send_graph`` with
-    the complete zero-frequency graph. ``runtimespy export`` requests current
-    counts on demand; process exit writes final counts to ``export_file``.
+    detected source root is used. When ``endpoint`` is set, startup POSTs the
+    complete zero-frequency graph to ``endpoint/report/full_graph`` and each
+    completed request POSTs its node counts to ``endpoint/report/node``.
+    ``runtimespy export`` requests current counts on demand; process exit writes
+    final counts to ``export_file``.
 
     Example::
 
@@ -257,6 +263,7 @@ def init(
 
         runtimespy.init(
             source=["src"],
+            endpoint="https://runtime.example/api",
             skip_modules=["my_app.generated.*"],
             report=True,
         )
@@ -304,6 +311,7 @@ def init(
     session = RuntimeSession(
         config,
         context=context,
+        endpoint=endpoint,
         report=report,
         export_file=export_file,
         serve_export=serve_export,
