@@ -42,11 +42,11 @@ def _post_json(endpoint: str | None, path: str, payload: dict[str, Any]) -> bool
         return False
 
     url = f"{endpoint}{path}"
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    logger.info("RuntimeSpy report POST %s body=%s", url, body)
     request = Request(
         url,
-        data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        ),
+        data=body.encode("utf-8"),
         headers={"Content-Type": "application/json"},
         method="POST",
     )

@@ -12,7 +12,10 @@ class TransportTests(unittest.TestCase):
         response.__enter__.return_value = response
         payload = {"value": "graph"}
 
-        with patch.object(transport, "urlopen", return_value=response) as open_url:
+        with (
+            patch.object(transport, "urlopen", return_value=response) as open_url,
+            self.assertLogs("runtimespy.transport", level="INFO") as report_logs,
+        ):
             self.assertTrue(
                 transport.send_graph(
                     payload,
@@ -41,6 +44,15 @@ class TransportTests(unittest.TestCase):
                 node_request.full_url,
                 "https://collector.example/runtime/report/node",
             )
+
+        self.assertIn(
+            'body={"value":"graph"}',
+            report_logs.output[0],
+        )
+        self.assertIn(
+            'body={"Frequency":[]}',
+            report_logs.output[1],
+        )
 
     def test_reporting_failure_does_not_break_the_application(self):
         with (

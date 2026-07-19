@@ -117,7 +117,8 @@ When `endpoint` is configured, RuntimeSpy reports two types of events:
 Both requests use `POST` with `Content-Type: application/json`. Reporting is
 best-effort with a five-second timeout: a network or reporting-service failure
 is logged but never fails the instrumented application request. Authentication,
-retry, and buffering are not implemented yet.
+retry, and buffering are not implemented yet. Before every POST, RuntimeSpy logs
+the destination URL and the complete JSON request body at `INFO` level.
 
 The per-request payload has this exact shape:
 
