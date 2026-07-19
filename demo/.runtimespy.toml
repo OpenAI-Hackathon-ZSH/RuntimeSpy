@@ -1,0 +1,7 @@
+[runtimespy]
+source = ["src"]
+include_modules = ["commerce_demo", "commerce_demo.*"]
+exclude_modules = ["commerce_demo.generated", "commerce_demo.generated.*"]
+exclude_paths = ["**/generated/**"]
+data_file = ".runtimespy/runtime.db"
+

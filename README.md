@@ -35,6 +35,14 @@ unrelated packages stay out of the report.
 > not universal proof that the code is dead. Use representative workloads before
 > deleting code.
 
+## Branch-rich Flask demo
+
+[`demo/`](demo/) contains a realistic in-memory commerce API with catalog,
+pricing, inventory, risk, order, fulfillment, refund, and administration flows.
+Its traffic simulator produces hot, cold, and unseen graph nodes without needing
+to start a network server. See [`demo/README.md`](demo/README.md) for setup and
+usage.
+
 ## Requirements
 
 - CPython 3.12 or newer
