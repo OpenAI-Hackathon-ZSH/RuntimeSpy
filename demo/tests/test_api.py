@@ -36,7 +36,7 @@ class CommerceApiTests(unittest.TestCase):
 
         swagger = self.client.get("/docs/")
         self.assertEqual(swagger.status_code, 200)
-        self.assertIn("Swagger UI", swagger.get_data(as_text=True))
+        self.assertIn('id="swagger-ui"', swagger.get_data(as_text=True))
 
     def test_order_idempotency_and_cancellation(self):
         payload = {

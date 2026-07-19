@@ -50,7 +50,7 @@ in the `demo` directory; do not stop the server after starting it.
 uv run python app.py
 ```
 
-The instrumented Flask server listens at `http://127.0.0.1:5000`. RuntimeSpy
+The instrumented Flask server listens at `http://127.0.0.1:8080`. RuntimeSpy
 starts before `commerce_demo` is imported and observes only `demo/src`.
 
 Set a reporting endpoint when needed:
@@ -67,19 +67,19 @@ Without this environment variable, HTTP reporting is disabled.
 Choose a different server port with:
 
 ```bash
-RUNTIMESPY_DEMO_PORT=5050 uv run python app.py
+RUNTIMESPY_DEMO_PORT=8081 uv run python app.py
 ```
 
 Swagger is available at
-[`http://127.0.0.1:5000/docs/`](http://127.0.0.1:5000/docs/) and the raw spec at
-[`http://127.0.0.1:5000/openapi.json`](http://127.0.0.1:5000/openapi.json).
+[`http://127.0.0.1:8080/docs/`](http://127.0.0.1:8080/docs/) and the raw spec at
+[`http://127.0.0.1:8080/openapi.json`](http://127.0.0.1:8080/openapi.json).
 
 ### Terminal 2: send simulated traffic
 
 Keep the server running. In a second terminal, from the `demo` directory, run:
 
 ```bash
-uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:5000
+uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:8080
 ```
 
 The traffic script only sends requests. It does not start or stop the server. It
@@ -90,7 +90,7 @@ or use `--interval 0` to send them without a delay:
 
 ```bash
 uv run python scripts/simulate_traffic.py \
-  --base-url http://127.0.0.1:5000 \
+  --base-url http://127.0.0.1:8080 \
   --interval 2
 ```
 
@@ -111,13 +111,13 @@ uv run runtimespy export
 Example requests:
 
 ```bash
-curl http://127.0.0.1:5000/api/v1/catalog/products
+curl http://127.0.0.1:8080/api/v1/catalog/products
 
-curl -X POST http://127.0.0.1:5000/api/v1/quotes \
+curl -X POST http://127.0.0.1:8080/api/v1/quotes \
   -H 'Content-Type: application/json' \
   -d '{"customer_id":"cust-vip","items":[{"sku":"HEADSET","quantity":2}],"coupon":"VIP20"}'
 
-curl -X POST http://127.0.0.1:5000/api/v1/orders \
+curl -X POST http://127.0.0.1:8080/api/v1/orders \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: example-1' \
   -d '{"customer_id":"cust-standard","items":[{"sku":"MOUSE","quantity":2}]}'
