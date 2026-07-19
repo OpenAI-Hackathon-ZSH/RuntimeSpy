@@ -28,6 +28,16 @@ class CommerceApiTests(unittest.TestCase):
         self.assertEqual(quote.get_json()["shipping_method"], "express")
         self.assertGreater(float(quote.get_json()["discount"]), 0)
 
+    def test_swagger_and_openapi_are_available(self):
+        specification = self.client.get("/openapi.json")
+        self.assertEqual(specification.status_code, 200)
+        self.assertEqual(specification.get_json()["openapi"], "3.1.0")
+        self.assertIn("/api/v1/orders", specification.get_json()["paths"])
+
+        swagger = self.client.get("/docs/")
+        self.assertEqual(swagger.status_code, 200)
+        self.assertIn("Swagger UI", swagger.get_data(as_text=True))
+
     def test_order_idempotency_and_cancellation(self):
         payload = {
             "customer_id": "cust-standard",
@@ -148,4 +158,3 @@ class CommerceApiTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

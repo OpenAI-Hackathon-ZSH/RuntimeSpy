@@ -9,10 +9,12 @@ def create_app(test_config: dict[str, Any] | None = None):
     from uuid import uuid4
 
     from flask import Flask, jsonify, request
+    from flask_swagger_ui import get_swaggerui_blueprint
 
     from .api import admin_api, catalog_api, order_api
     from .container import build_container
     from .errors import DomainError
+    from .openapi import build_openapi_spec
 
     app = Flask(__name__)
     app.config.from_mapping(
@@ -30,17 +32,35 @@ def create_app(test_config: dict[str, Any] | None = None):
     app.register_blueprint(catalog_api)
     app.register_blueprint(order_api)
     app.register_blueprint(admin_api)
+    app.register_blueprint(
+        get_swaggerui_blueprint(
+            "/docs",
+            "/openapi.json",
+            config={
+                "app_name": "RuntimeSpy Commerce Demo API",
+                "deepLinking": True,
+                "displayRequestDuration": True,
+                "tryItOutEnabled": True,
+            },
+        )
+    )
 
     @app.get("/health")
     def health():
         status = "maintenance" if app.config["MAINTENANCE_MODE"] else "ok"
         return jsonify({"status": status, "service": "commerce-demo"})
 
+    @app.get("/openapi.json")
+    def openapi_document():
+        return jsonify(build_openapi_spec())
+
     @app.before_request
     def enforce_maintenance_mode():
         if not app.config["MAINTENANCE_MODE"]:
             return None
-        if request.endpoint in {"health", "admin.set_maintenance"}:
+        if request.endpoint in {"health", "openapi_document", "admin.set_maintenance"}:
+            return None
+        if request.path.startswith("/docs"):
             return None
         if request.headers.get("X-Role", "").lower() == "admin":
             return None

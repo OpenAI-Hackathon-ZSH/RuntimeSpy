@@ -1,5 +1,6 @@
 """Development entry point with RuntimeSpy embedded before application imports."""
 
+import os
 from pathlib import Path
 
 import runtimespy
@@ -20,5 +21,11 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=False)
-
+    port = int(os.environ.get("RUNTIMESPY_DEMO_PORT", "5000"))
+    app.run(
+        host="127.0.0.1",
+        port=port,
+        debug=False,
+        threaded=True,
+        use_reloader=False,
+    )

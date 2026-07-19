@@ -39,9 +39,9 @@ unrelated packages stay out of the report.
 
 [`demo/`](demo/) contains a realistic in-memory commerce API with catalog,
 pricing, inventory, risk, order, fulfillment, refund, and administration flows.
-Its traffic simulator produces hot, cold, and unseen graph nodes without needing
-to start a network server. See [`demo/README.md`](demo/README.md) for setup and
-usage.
+Its orchestration script starts an instrumented Flask server, sends real HTTP
+traffic, stops the process, and verifies the resulting graph JSON. See
+[`demo/README.md`](demo/README.md) for setup and usage.
 
 ## Requirements
 

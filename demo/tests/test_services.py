@@ -6,6 +6,7 @@ import unittest
 from commerce_demo.container import build_container
 from commerce_demo.errors import DomainError
 from commerce_demo.models import CustomerTier, OrderStatus
+from commerce_demo.openapi import build_openapi_spec
 
 
 class CommerceServiceTests(unittest.TestCase):
@@ -29,6 +30,19 @@ class CommerceServiceTests(unittest.TestCase):
         self.assertEqual(quote.shipping_method.value, "express")
         self.assertGreater(quote.discount, Decimal("50.00"))
         self.assertGreater(quote.total, Decimal("0.00"))
+
+    def test_openapi_document_covers_every_api_group(self):
+        specification = build_openapi_spec()
+        self.assertEqual(specification["openapi"], "3.1.0")
+        paths = specification["paths"]
+        operation_count = sum(
+            method in {"get", "post", "put", "patch", "delete"}
+            for operations in paths.values()
+            for method in operations
+        )
+        self.assertEqual(operation_count, 17)
+        self.assertIn("/api/v1/orders/{order_id}/refund", paths)
+        self.assertIn("/api/v1/admin/maintenance", paths)
 
     def test_inventory_transaction_rolls_back_on_failure(self):
         original = self.services.store.stock("HEADSET").available
@@ -132,4 +146,3 @@ class CommerceServiceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

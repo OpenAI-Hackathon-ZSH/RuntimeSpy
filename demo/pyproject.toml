@@ -9,6 +9,8 @@ description = "Branch-rich Flask commerce API for demonstrating RuntimeSpy"
 requires-python = ">=3.12"
 dependencies = [
   "Flask>=3.1,<4",
+  "flask-swagger-ui>=5.32.8,<6",
+  "runtimespy",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +25,5 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 
+[tool.uv.sources]
+runtimespy = { path = "..", editable = true }

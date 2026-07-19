@@ -20,7 +20,17 @@ logic for a frontend heatmap.
 
 ## Setup
 
-From this `demo` directory:
+The demo is configured as its own `uv` project. From this `demo` directory:
+
+```bash
+uv sync --extra test
+```
+
+`uv` reads `pyproject.toml`, creates `.venv`, and installs Flask and the test
+dependencies. The orchestration script adds the repository's `src` directory to
+`PYTHONPATH`, so it always runs the local RuntimeSpy source.
+
+The equivalent `pip` setup is:
 
 ```bash
 python -m venv .venv
@@ -29,36 +39,86 @@ python -m pip install -e ..
 python -m pip install -e ".[test]"
 ```
 
-## Generate a graph without starting a server
+## One command: server, traffic, graph
 
 ```bash
-python scripts/simulate_traffic.py
+uv run python scripts/run_demo.py
 ```
 
-The script sends successful, rejected, replayed, reviewed, shipped, refunded,
-cancelled, administrative, and maintenance-mode requests through Flask's test
-client. It then stops RuntimeSpy explicitly and writes:
+`run_demo.py` performs the complete real-process flow:
+
+1. chooses an available localhost port;
+2. starts `app.py` as a separate instrumented Flask server process;
+3. waits for `/health` to report ready;
+4. sends real HTTP requests covering successful, rejected, replayed, reviewed,
+   shipped, refunded, cancelled, administrative, and maintenance-mode paths;
+5. sends `SIGINT` to stop the server cleanly;
+6. waits for the server process's RuntimeSpy exit handler to overwrite:
 
 ```text
 demo/.runtimespy/export.json
 ```
 
-That file can be given directly to the graph UI described in the repository's
-main README.
+The script validates the new JSON and prints its node/edge summary. That file can
+be given directly to the graph UI described in the repository's main README.
 
-## Run the API server
+Choose a fixed port when needed:
 
 ```bash
-python app.py
+uv run python scripts/run_demo.py --port 5050
 ```
 
+## Open Swagger UI
+
+Use `--swagger` to run the full traffic suite, open the interactive API docs in
+your default browser, and keep the server alive while you try requests manually:
+
+```bash
+uv run python scripts/run_demo.py --swagger
+```
+
+The script prints and opens a URL such as:
+
+```text
+http://127.0.0.1:54321/docs/
+```
+
+Swagger UI is served locally by the Flask process. Its OpenAPI 3.1 document is
+available at `/openapi.json`. The docs include request schemas, example values,
+query/path/header parameters, role descriptions, and every demo endpoint. Press
+Enter in the terminal when finished; the server exits and RuntimeSpy writes the
+final graph JSON.
+
+## Run server and traffic separately
+
+Start the instrumented server in the first terminal:
+
+```bash
+uv run python app.py
+```
+
+With the default port, Swagger is available at
+[`http://127.0.0.1:5000/docs/`](http://127.0.0.1:5000/docs/) and the raw spec at
+[`http://127.0.0.1:5000/openapi.json`](http://127.0.0.1:5000/openapi.json).
+
 RuntimeSpy starts before `commerce_demo` is imported, observes only `demo/src`,
-and writes the final graph when the process exits. While it is running, request
-an on-demand snapshot from another terminal:
+and writes the final graph when the process exits. In a second terminal, send the
+same real HTTP traffic suite:
 
 ```bash
 cd demo
-runtimespy export
+uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:5000
+```
+
+Stop the server with `Ctrl-C`; its exit handler refreshes
+`.runtimespy/export.json`. The traffic process never initializes RuntimeSpy—the
+server process owns all counters and the final export.
+
+You can also request an on-demand snapshot while the server is still running:
+
+```bash
+cd demo
+uv run runtimespy export
 ```
 
 Example requests:
@@ -81,6 +141,8 @@ curl -X POST http://127.0.0.1:5000/api/v1/orders \
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Health and maintenance state |
+| `GET` | `/docs/` | Interactive Swagger UI |
+| `GET` | `/openapi.json` | OpenAPI 3.1 API description |
 | `GET` | `/api/v1/catalog/products` | Filterable catalog list |
 | `GET` | `/api/v1/catalog/products/<sku>` | Product and availability details |
 | `POST` | `/api/v1/quotes` | Price items, discounts, delivery, and tax |
@@ -105,6 +167,5 @@ Roles are supplied through the `X-Role` header. Useful demo roles are
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -q
+uv run python -m unittest discover -s tests -q
 ```
-
