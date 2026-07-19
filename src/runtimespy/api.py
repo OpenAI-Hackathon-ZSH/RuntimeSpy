@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import atexit
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 import shlex
 import sys
 import time
 from typing import Iterable
 
-from .analysis import snapshot_scope
-from .collector import RuntimeSpy
+from . import transport
+from .analysis import SourceSnapshot, snapshot_scope
+from .collector import RequestScope, RuntimeSpy
 from .config import (
     DEFAULT_EXCLUDE_PATHS,
     ConfigError,
@@ -20,6 +23,8 @@ from .config import (
     load_config,
 )
 from .exporting import DEFAULT_EXPORT_FILE, write_final_export
+from .graph import graph_from_snapshots
+from .integrations import install_optional_integrations
 from .live import OnDemandSnapshotServer
 from .report import write_report
 from .storage import Storage
@@ -34,6 +39,16 @@ def _as_strings(value: str | Iterable[str] | None) -> tuple[str, ...]:
     if isinstance(value, str):
         return (value,)
     return tuple(value)
+
+
+@dataclass(slots=True)
+class RuntimeRequest:
+    """One request-local collection scope owned by a RuntimeSession."""
+
+    session: "RuntimeSession"
+    scope: RequestScope
+    finished: bool = False
+    payload: dict[str, object] | None = None
 
 
 class RuntimeSession:
@@ -57,6 +72,7 @@ class RuntimeSession:
         self.context = context
         self.report = report
         self.collector = RuntimeSpy(config)
+        self.sources: tuple[SourceSnapshot, ...] = ()
         self.started_at = datetime.now(timezone.utc)
         self.started_clock = time.perf_counter()
         self.run_id: int | None = None
@@ -81,12 +97,66 @@ class RuntimeSession:
     def start(self) -> "RuntimeSession":
         self.collector.start()
         try:
+            self.sources = tuple(snapshot_scope(self.collector.scope))
+            graph = graph_from_snapshots(self.sources, {}, {}, {})
+            transport.send_graph(
+                {
+                    "schema_version": 2,
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "mode": "initial",
+                    "project": {"roots": [str(self.config.project_root)]},
+                    "session": {
+                        "pid": os.getpid(),
+                        "context": self.context,
+                        "started_at": self.started_at.isoformat(),
+                        "command": shlex.join([sys.executable, *sys.argv]),
+                    },
+                    "summary": graph["summary"],
+                    "graph": graph,
+                }
+            )
+            install_optional_integrations()
             if self.snapshot_server is not None:
                 self.snapshot_server.start()
         except BaseException:
             self.collector.stop()
             raise
         return self
+
+    def begin_request(self) -> RuntimeRequest:
+        """Begin a concurrency-isolated request counter scope."""
+
+        if self._stopped:
+            raise RuntimeError("RuntimeSpy session is already stopped")
+        return RuntimeRequest(session=self, scope=self.collector.begin_request())
+
+    def end_request(self, request: RuntimeRequest) -> dict[str, object]:
+        """Finish a request and emit only the node counts observed within it."""
+
+        if request.session is not self:
+            raise RuntimeError("RuntimeSpy request belongs to a different session")
+        if request.finished:
+            assert request.payload is not None
+            return request.payload
+
+        counts = self.collector.end_request(request.scope)
+        graph = graph_from_snapshots(
+            self.sources,
+            counts.hits,
+            counts.starts,
+            counts.branches,
+        )
+        payload: dict[str, object] = {
+            "Frequency": [
+                {"node": node["id"], "count": node["frequency"]}
+                for node in graph["nodes"]
+                if node["frequency"] > 0
+            ]
+        }
+        request.finished = True
+        request.payload = payload
+        transport.send_frequency(payload)
+        return payload
 
     def stop(self, *, exit_code: int = 0) -> int:
         """Stop collection, persist counters, and return the recorded run ID."""
@@ -177,8 +247,9 @@ def init(
     ``source`` defines the hard filesystem boundary. ``skip_modules`` and
     ``skip_paths`` remove modules or paths inside that boundary. When ``source``
     is omitted, existing RuntimeSpy config is loaded; if none exists, the best
-    detected source root is used. ``runtimespy export`` requests current counts
-    on demand; process exit writes final counts to ``export_file``.
+    detected source root is used. Startup calls ``transport.send_graph`` with
+    the complete zero-frequency graph. ``runtimespy export`` requests current
+    counts on demand; process exit writes final counts to ``export_file``.
 
     Example::
 
@@ -248,3 +319,19 @@ def shutdown(*, exit_code: int = 0) -> int | None:
     if _active_session is None:
         return None
     return _active_session.stop(exit_code=exit_code)
+
+
+def begin_request() -> RuntimeRequest | None:
+    """Begin per-request collection when an embedded session is active."""
+
+    if _active_session is None:
+        return None
+    return _active_session.begin_request()
+
+
+def end_request(request: RuntimeRequest | None) -> dict[str, object] | None:
+    """Emit one request's node-frequency payload, if collection is active."""
+
+    if request is None:
+        return None
+    return request.session.end_request(request)

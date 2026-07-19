@@ -100,6 +100,46 @@ exits, RuntimeSpy writes the final counters to the same file automatically. The
 exporter falls back to SQLite when no process is active. Only one default JSON
 file is maintained.
 
+## Startup and per-request events
+
+RuntimeSpy also defines a two-message protocol for a future graph service:
+
+1. `init()` immediately builds the complete project graph with every node and
+   edge `frequency` set to `0`, then calls
+   `runtimespy.transport.send_graph(payload)`.
+2. `init()` automatically detects Flask and wraps its WSGI request boundary.
+   Before application handling RuntimeSpy starts a request-local counter; after
+   the request returns or raises, it calls
+   `runtimespy.transport.send_frequency(payload)` with only the nodes entered by
+   that request. The target Flask application does not need hooks or middleware.
+
+The two transport functions currently have empty bodies. They define the API
+boundary and payloads, but deliberately do not perform HTTP, retries,
+authentication, or buffering yet. They can later be implemented in
+`src/runtimespy/transport.py` without changing instrumentation code.
+
+The per-request payload has this exact shape:
+
+```json
+{
+  "Frequency": [
+    {"node": "node_a74bdb17f4db2c34bcc1", "count": 3},
+    {"node": "node_8496c50571534d18046b", "count": 1}
+  ]
+}
+```
+
+See
+[`examples/request-frequency.example.json`](examples/request-frequency.example.json)
+for a standalone fixture. Counts are local to one request, never cumulative.
+RuntimeSpy stores them in a Python `ContextVar`, so overlapping threads or async
+request contexts do not use a shared before/after snapshot.
+
+The Flask adapter is installed automatically by `runtimespy.init()`. Other
+framework adapters can define their request boundary with the public
+`runtimespy.begin_request()` and `runtimespy.end_request(trace)` APIs; calling
+them without an active RuntimeSpy session is a safe no-op.
+
 ## JSON graph data contract
 
 The complete, frontend-ready sample is
@@ -130,18 +170,19 @@ nodes that a UI can highlight as unobserved logic.
 | --- | --- | --- |
 | `schema_version` | integer | Version of the entire export envelope. Currently `2`. |
 | `generated_at` | string | UTC ISO 8601 time at which this snapshot was created. |
-| `mode` | string | `live`, `final`, or `stored`; see the mode table below. |
+| `mode` | string | `initial`, `live`, `final`, or `stored`; see the mode table below. |
 | `project.roots` | string[] | Absolute project roots that contributed data. |
 | `summary` | object | Convenience copy of `graph.summary` for dashboards. |
 | `graph` | object | The control-flow graph and its file/scope hierarchy. |
 | `active_sessions` | object[] | Present in `live` mode. Describes every process merged into the snapshot. |
-| `session` | object | Present in `final` mode. Describes the process that just stopped. |
+| `session` | object | Present in `initial` and `final` modes. Describes the instrumented process. |
 | `latest_run` | object or null | Present in `stored` mode. Metadata for the newest persisted run. |
 
 Mode changes metadata and the counter window, but not the graph shape:
 
 | Mode | Produced when | Frequency window |
 | --- | --- | --- |
+| `initial` | `init()` calls the empty `send_graph` transport hook | Zeroed topology; every node and edge frequency is `0`. |
 | `live` | `runtimespy export` reaches one or more running processes | Current sessions; matching node and edge counts are summed across processes. |
 | `final` | An instrumented process exits or its session is stopped | The just-completed process session. |
 | `stored` | No live process is available and the CLI reads SQLite | Cumulative data retained from completed runs. |

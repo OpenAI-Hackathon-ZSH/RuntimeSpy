@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, field
 import dis
 from pathlib import Path
 import sys
@@ -16,6 +18,21 @@ from .scope import ScopeMatcher
 LineKey = tuple[str, int]
 CodeStartKey = tuple[str, str, int]
 BranchKey = tuple[str, str, int, int, int, int]
+
+
+@dataclass(slots=True)
+class RequestCounts:
+    """Execution counters isolated to one logical request context."""
+
+    hits: Counter[LineKey] = field(default_factory=Counter)
+    starts: Counter[CodeStartKey] = field(default_factory=Counter)
+    branches: Counter[BranchKey] = field(default_factory=Counter)
+
+
+@dataclass(frozen=True, slots=True)
+class RequestScope:
+    token: Token[RequestCounts | None]
+    counts: RequestCounts
 
 
 class RuntimeSpy:
@@ -47,6 +64,10 @@ class RuntimeSpy:
         self._hits: Counter[LineKey] = Counter()
         self._starts: Counter[CodeStartKey] = Counter()
         self._branches: Counter[BranchKey] = Counter()
+        self._request_counts: ContextVar[RequestCounts | None] = ContextVar(
+            f"runtimespy_request_counts_{id(self)}",
+            default=None,
+        )
         self._code_cache: dict[CodeType, str | None] = {}
         self._position_cache: dict[CodeType, dict[int, tuple[int, int]]] = {}
         self._branch_events: tuple[int, ...] = ()
@@ -93,13 +114,21 @@ class RuntimeSpy:
     def _line_callback(self, code: CodeType, line_number: int) -> None:
         relative = self._relative_for_code(code)
         if relative is not None:
-            self._hits[(relative, line_number)] += 1
+            key = (relative, line_number)
+            self._hits[key] += 1
+            request_counts = self._request_counts.get()
+            if request_counts is not None:
+                request_counts.hits[key] += 1
 
     def _start_callback(self, code: CodeType, instruction_offset: int) -> None:
         relative = self._relative_for_code(code)
         if relative is not None:
             qualname = code.co_qualname.replace(".<locals>.", ".")
-            self._starts[(relative, qualname, code.co_firstlineno)] += 1
+            key = (relative, qualname, code.co_firstlineno)
+            self._starts[key] += 1
+            request_counts = self._request_counts.get()
+            if request_counts is not None:
+                request_counts.starts[key] += 1
 
     def _positions_for_code(self, code: CodeType) -> dict[int, tuple[int, int]]:
         positions = self._position_cache.get(code)
@@ -127,9 +156,37 @@ class RuntimeSpy:
         if source is None or destination is None:
             return
         qualname = code.co_qualname.replace(".<locals>.", ".")
-        self._branches[
-            (relative, qualname, source[0], source[1], destination[0], destination[1])
-        ] += 1
+        key = (
+            relative,
+            qualname,
+            source[0],
+            source[1],
+            destination[0],
+            destination[1],
+        )
+        self._branches[key] += 1
+        request_counts = self._request_counts.get()
+        if request_counts is not None:
+            request_counts.branches[key] += 1
+
+    def begin_request(self) -> RequestScope:
+        """Start collecting counters for the current request context."""
+
+        if not self._running:
+            raise RuntimeError("RuntimeSpy collector is not running")
+        if self._request_counts.get() is not None:
+            raise RuntimeError("a RuntimeSpy request scope is already active")
+        counts = RequestCounts()
+        token = self._request_counts.set(counts)
+        return RequestScope(token=token, counts=counts)
+
+    def end_request(self, scope: RequestScope) -> RequestCounts:
+        """Close a request context and return only its execution counters."""
+
+        if self._request_counts.get() is not scope.counts:
+            raise RuntimeError("RuntimeSpy request scope does not match this context")
+        self._request_counts.reset(scope.token)
+        return scope.counts
 
     def start(self) -> "RuntimeSpy":
         if self._running:
