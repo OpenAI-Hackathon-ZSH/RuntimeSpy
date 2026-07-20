@@ -94,6 +94,28 @@ jobs:
               output.write(f"instance_id={stack['InstanceId']}\n")
           PY
 
+      - name: Restart service and emit RuntimeSpy graph
+        env:
+          INSTANCE_ID: ${{ steps.stack.outputs.instance_id }}
+        run: |
+          command_id="$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "Restart RuntimeSpy commerce demo after deployment" \
+            --parameters 'commands=["sudo docker restart runtimespy-commerce-demo","sudo docker ps --filter name=runtimespy-commerce-demo --format {{.Status}}"]' \
+            --query 'Command.CommandId' \
+            --output text)"
+
+          echo "Waiting for SSM command ${command_id} on ${INSTANCE_ID}..."
+          aws ssm wait command-executed \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID"
+          aws ssm get-command-invocation \
+            --command-id "$command_id" \
+            --instance-id "$INSTANCE_ID" \
+            --query '{status:Status,stdout:StandardOutputContent,stderr:StandardErrorContent}' \
+            --output json
+
       - name: Verify public access
         env:
           SERVICE_URL: ${{ steps.stack.outputs.service_url }}
