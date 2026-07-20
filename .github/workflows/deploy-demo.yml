@@ -21,15 +21,15 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
-  RUNTIMESPY_REPORT_ENDPOINT: ${{ secrets.RUNTIME_SPY_REPORT_ENDPOINT }}
-
 jobs:
   deploy:
     name: Deploy to public EC2
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment: production
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
+      RUNTIMESPY_REPORT_ENDPOINT: ${{ secrets.RUNTIME_SPY_REPORT_ENDPOINT }}
 
     steps:
       - name: Check out repository
