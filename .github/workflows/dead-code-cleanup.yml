@@ -42,8 +42,10 @@ jobs:
 
       - name: Analyze dead code
         run: |
+          set -e
           chmod +x ./delete-dead-code
           ./delete-dead-code --limit 5 report.json > recommendations.json
+          echo "✓ Analysis complete"
 
       - name: Verify GH_TOKEN
         run: |
@@ -103,8 +105,8 @@ jobs:
               if not os.path.exists(file_path) and os.path.exists(f"demo/{file_path}"):
                   file_path = f"demo/{file_path}"
               if not os.path.exists(file_path):
-                  print(f"⚠ File not found: {file_path}")
-                  continue
+                  print(f"❌ FATAL: File not found: {file_path}")
+                  exit(1)
 
               with open(file_path) as f:
                   lines = f.readlines()
@@ -138,6 +140,9 @@ jobs:
               f"Files modified: {len(recommendations['groups'])}"
           ], check=True)
 
+          # Push branch first
+          subprocess.run(["git", "push", "--force-with-lease", "origin", branch_name], check=True)
+
           # Create PR
           pr_body = f"## Automated Dead Code Removal\n\n"
           pr_body += f"**Analysis Summary:**\n"
@@ -162,7 +167,8 @@ jobs:
           result = subprocess.run([
               "gh", "pr", "create",
               "--title", "Remove dead code identified by RuntimeSpy",
-              "--body", pr_body
+              "--body", pr_body,
+              "--head", branch_name
           ], capture_output=True, text=True, env=env)
 
           if result.returncode == 0:
@@ -172,11 +178,3 @@ jobs:
               exit(1)
           EOF
 
-      - name: Push branch
-        run: |
-          if git rev-parse --verify cleanup/dead-code >/dev/null 2>&1; then
-            git push --force-with-lease origin cleanup/dead-code
-            echo "✓ Branch pushed"
-          else
-            echo "✓ No branch to push (no dead code found)"
-          fi
