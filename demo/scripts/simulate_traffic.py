@@ -236,7 +236,7 @@ def run_scenario(base_url: str, *, interval_seconds: float = 2.0) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--base-url", default="http://127.0.0.1:8080")
+    parser.add_argument("--base-url", default="http://34.239.92.98/")
     parser.add_argument(
         "--interval",
         type=float,

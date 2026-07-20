@@ -76,11 +76,14 @@ Swagger is available at
 
 ### Terminal 2: send simulated traffic
 
-Keep the server running. In a second terminal, from the `demo` directory, run:
+To send traffic to the deployed demo, from the `demo` directory run:
 
 ```bash
-uv run python scripts/simulate_traffic.py --base-url http://127.0.0.1:8080
+uv run python scripts/simulate_traffic.py
 ```
+
+Its default target is `http://34.239.92.98/`. To target the local server from
+Terminal 1 instead, pass `--base-url http://127.0.0.1:8080`.
 
 The traffic script only sends requests. It does not start or stop the server. It
 covers successful, rejected, replayed, reviewed, shipped, refunded, cancelled,
@@ -90,7 +93,7 @@ or use `--interval 0` to send them without a delay:
 
 ```bash
 uv run python scripts/simulate_traffic.py \
-  --base-url http://127.0.0.1:8080 \
+  --base-url http://34.239.92.98/ \
   --interval 2
 ```
 
