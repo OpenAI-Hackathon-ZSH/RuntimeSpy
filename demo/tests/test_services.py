@@ -40,8 +40,10 @@ class CommerceServiceTests(unittest.TestCase):
             for operations in paths.values()
             for method in operations
         )
-        self.assertEqual(operation_count, 17)
+        self.assertEqual(operation_count, 19)
         self.assertIn("/api/v1/orders/{order_id}/refund", paths)
+        self.assertIn("/api/v1/orders/{order_id}/refund-eligibility", paths)
+        self.assertIn("/api/v1/shipping/options", paths)
         self.assertIn("/api/v1/admin/maintenance", paths)
 
     def test_inventory_transaction_rolls_back_on_failure(self):
