@@ -2,27 +2,26 @@
 """
 Codex Skill: Delete Dead Code
 
-Analyzes RuntimeSpy instrumentation data and automatically creates GitHub PRs
-to remove dead code (nodes with frequency=0).
+Analyzes RuntimeSpy instrumentation data and outputs JSON recommendations
+for code deletions. Does not modify code directly - that's handled by
+GitHub Actions.
 
 Usage:
   delete-dead-code [OPTIONS] [INPUT_FILE]
-  delete-dead-code --limit 5 instrumentation.json
-  delete-dead-code --dry-run report.json
+  delete-dead-code --limit 5 instrumentation.json > recommendations.json
+  delete-dead-code --limit 3 report.json --output recommendations.json
 """
 
 import argparse
 import json
 import sys
-import subprocess
 from pathlib import Path
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
+from collections import defaultdict
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Remove dead code using RuntimeSpy instrumentation data",
+        description="Analyze dead code and output deletion recommendations",
         prog="delete-dead-code"
     )
     parser.add_argument(
@@ -34,22 +33,16 @@ def parse_args():
         "--limit",
         type=int,
         default=3,
-        help="Maximum number of PR groups (default: 3)"
+        help="Maximum number of groups (default: 3)"
     )
     parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview without creating PRs"
+        "--output",
+        help="Write to file instead of stdout"
     )
     parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Show detailed output"
-    )
-    parser.add_argument(
-        "--backend-url",
-        default="http://34.226.45.56:8000",
-        help="Backend URL (default: http://34.226.45.56:8000)"
+        help="Show analysis details"
     )
     return parser.parse_args()
 
@@ -63,113 +56,131 @@ def read_instrumentation(input_file):
         else:
             return json.load(sys.stdin)
     except FileNotFoundError as e:
-        print(f"❌ Error: File not found: {e}")
+        print(f"❌ Error: File not found: {e}", file=sys.stderr)
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"❌ Error: Invalid JSON: {e}")
+        print(f"❌ Error: Invalid JSON: {e}", file=sys.stderr)
         sys.exit(1)
 
 
-def extract_summary(data):
-    """Extract summary from instrumentation data."""
-    return data.get("summary", {})
-
-
-def count_dead_nodes(data):
-    """Count nodes with frequency=0."""
+def extract_dead_nodes(data):
+    """Extract nodes with frequency=0 grouped by file."""
     nodes = data.get("graph", {}).get("nodes", [])
-    return len([n for n in nodes if n.get("frequency", 0) == 0])
+    dead_by_file = defaultdict(list)
+
+    for node in nodes:
+        if node.get("frequency", 0) == 0:
+            file_path = node.get("path", "unknown")
+            dead_by_file[file_path].append(node)
+
+    return dead_by_file
 
 
-def trigger_cleanup(backend_url, limit, dry_run):
-    """Trigger cleanup on backend."""
-    try:
-        endpoint = f"trigger/cleanup?limit={limit}"
-        if dry_run:
-            endpoint += "&dry-run=true"
+def group_deletions(dead_by_file, limit):
+    """Group dead code by file and create deletion recommendations."""
+    groups = []
 
-        url = f"{backend_url.rstrip('/')}/{endpoint}"
-        request = Request(url, method="POST")
-        request.add_header("Content-Type", "application/json")
+    for file_path in sorted(dead_by_file.keys())[:limit]:
+        nodes = dead_by_file[file_path]
+        if not nodes:
+            continue
 
-        if dry_run:
-            print(f"🔍 DRY RUN: Would send request to {url}")
-            return {"status": "dry_run", "message": "Preview mode"}
+        # Sort by line number
+        nodes.sort(key=lambda n: n.get("start_line", 0))
 
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError) as e:
-        print(f"❌ Backend error: {e}")
-        sys.exit(1)
+        # Merge adjacent/overlapping deletions
+        deletions = []
+        current_start = None
+        current_end = None
 
+        for node in nodes:
+            start = node.get("start_line", 0)
+            end = node.get("end_line", 0)
 
-def send_instrumentation(backend_url, data):
-    """Send instrumentation data to backend if not already there."""
-    try:
-        url = f"{backend_url.rstrip('/')}/report/full_graph"
-        request = Request(
-            url,
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
+            if current_start is None:
+                current_start = start
+                current_end = end
+            elif start <= current_end + 1:
+                # Merge with previous
+                current_end = max(current_end, end)
+            else:
+                # Save previous deletion
+                deletions.append({
+                    "start_line": current_start,
+                    "end_line": current_end
+                })
+                current_start = start
+                current_end = end
 
-        with urlopen(request, timeout=10) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            if result.get("status") == "success":
-                return True
-    except Exception as e:
-        if "--verbose" in sys.argv:
-            print(f"⚠️  Could not send instrumentation: {e}")
-    return False
+        # Add last deletion
+        if current_start is not None:
+            deletions.append({
+                "start_line": current_start,
+                "end_line": current_end
+            })
+
+        group = {
+            "file": file_path,
+            "dead_nodes": len(nodes),
+            "deletions": deletions,
+            "total_lines": sum(d["end_line"] - d["start_line"] + 1 for d in deletions),
+            "confidence": 95,  # Default confidence for frequency=0
+            "risk": 2  # Default low risk (dead code)
+        }
+        groups.append(group)
+
+    return groups
 
 
 def main():
     args = parse_args()
 
-    print("🚀 Codex Skill: Delete Dead Code")
-    print("=" * 60)
-
-    # 1. Read instrumentation data
-    print("\n📊 Reading instrumentation data...")
+    # Read instrumentation
+    if args.verbose:
+        print("📊 Reading instrumentation data...", file=sys.stderr)
     data = read_instrumentation(args.input_file)
 
-    # 2. Analyze data
-    summary = extract_summary(data)
-    dead_count = count_dead_nodes(data)
+    # Extract dead code
+    summary = data.get("summary", {})
+    dead_by_file = extract_dead_nodes(data)
+    total_dead = sum(len(nodes) for nodes in dead_by_file.values())
 
-    print(f"\n✓ Instrumentation loaded")
-    print(f"   Total nodes: {summary.get('nodes', '?')}")
-    print(f"   Executed: {summary.get('executed_nodes', '?')}")
-    print(f"   Dead (frequency=0): {dead_count}")
-
-    if dead_count == 0:
-        print("\n✓ No dead code found!")
-        return 0
-
-    # 3. Send to backend if needed
     if args.verbose:
-        print(f"\n🔄 Ensuring backend has data...")
-        send_instrumentation(args.backend_url, data)
+        print(f"✓ Found {total_dead} dead nodes across {len(dead_by_file)} files", file=sys.stderr)
 
-    # 4. Trigger cleanup
-    print(f"\n🔧 Triggering dead code cleanup...")
-    if args.dry_run:
-        print("   (DRY RUN MODE - no PRs will be created)")
-
-    result = trigger_cleanup(args.backend_url, args.limit, args.dry_run)
-
-    if result.get("status") == "success" or result.get("status") == "dry_run":
-        print(f"\n✅ {result.get('message', 'Success')}")
-
-        if args.dry_run:
-            print("\n📋 To create actual PRs, run without --dry-run:")
-            print(f"   delete-dead-code --limit {args.limit} {args.input_file or '<input>'}")
+    if total_dead == 0:
+        result = {
+            "status": "success",
+            "message": "No dead code found",
+            "groups": []
+        }
     else:
-        print(f"\n❌ Failed: {result.get('message', 'Unknown error')}")
-        return 1
+        # Group deletions
+        groups = group_deletions(dead_by_file, args.limit)
 
-    print("\n" + "=" * 60)
+        result = {
+            "status": "success",
+            "message": f"Analyzed {total_dead} dead nodes, created {len(groups)} groups",
+            "summary": {
+                "total_nodes": summary.get("nodes", 0),
+                "executed_nodes": summary.get("executed_nodes", 0),
+                "dead_nodes": total_dead,
+                "files_affected": len(dead_by_file)
+            },
+            "groups": groups
+        }
+
+    # Output JSON
+    output = json.dumps(result, indent=2)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(output)
+        if args.verbose:
+            print(f"✓ Recommendations written to {args.output}", file=sys.stderr)
+    else:
+        print(output)
+
     return 0
 
 
