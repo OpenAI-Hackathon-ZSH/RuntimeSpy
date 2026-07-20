@@ -134,6 +134,14 @@ def build_openapi_spec() -> dict[str, Any]:
                     request_schema="QuoteRequest",
                 )
             },
+            "/api/v1/shipping/options": {
+                "post": _operation(
+                    "previewShippingOptions",
+                    "List delivery options available to a checkout",
+                    "Pricing",
+                    request_schema="QuoteRequest",
+                )
+            },
             "/api/v1/inventory/{sku}": {
                 "get": _operation(
                     "getInventory",
@@ -204,6 +212,14 @@ def build_openapi_spec() -> dict[str, Any]:
                 "get": _operation(
                     "getOrder",
                     "Get order details",
+                    "Orders",
+                    parameters=[order_id],
+                )
+            },
+            "/api/v1/orders/{order_id}/refund-eligibility": {
+                "get": _operation(
+                    "getRefundEligibility",
+                    "Preview refundable balance and policy eligibility",
                     "Orders",
                     parameters=[order_id],
                 )

@@ -758,6 +758,8 @@ def _combine_files(files: Iterable[dict[str, Any]]) -> dict[str, Any]:
     edges: list[dict[str, Any]] = []
     hierarchy: list[dict[str, Any]] = []
     for item in files:
+        if item["path"] == "__init__.py" or item["path"].endswith("/__init__.py"):
+            continue
         nodes.extend(item["nodes"])
         edges.extend(item["edges"])
         hierarchy.append(

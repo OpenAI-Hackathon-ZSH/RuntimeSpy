@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from decimal import Decimal
+
 from flask import Blueprint, jsonify, request
 
-from ..models import serialize
+from ..models import OrderStatus, serialize, utc_now
 from .common import client_ip, container, json_body, request_role
 
 
@@ -38,6 +41,37 @@ def list_orders():
 @order_api.get("/<order_id>")
 def get_order(order_id: str):
     return jsonify(serialize(container().store.order(order_id)))
+
+
+@order_api.get("/<order_id>/refund-eligibility")
+def get_refund_eligibility(order_id: str):
+    """Preview refund policy before support submits a refund transaction."""
+    services = container()
+    order = services.store.order(order_id)
+    remaining = order.total - order.refunded_amount
+    expires_at = order.created_at + timedelta(days=services.orders.refund_window_days)
+    now = utc_now()
+    reasons: list[str] = []
+
+    if order.status in {OrderStatus.CANCELLED, OrderStatus.REFUNDED}:
+        reasons.append("order_is_closed")
+    if order.status is OrderStatus.PENDING_REVIEW:
+        reasons.append("risk_review_pending")
+    if now > expires_at:
+        reasons.append("refund_window_expired")
+    if remaining <= Decimal("0.00"):
+        reasons.append("no_refundable_balance")
+
+    return jsonify(
+        {
+            "order_id": order.id,
+            "eligible": not reasons,
+            "reasons": reasons,
+            "refundable_amount": format(max(remaining, Decimal("0.00")), ".2f"),
+            "finance_approval_required": remaining > Decimal("500.00"),
+            "refund_window_expires_at": expires_at.isoformat(),
+        }
+    )
 
 
 @order_api.post("/<order_id>/cancel")
@@ -87,4 +121,3 @@ def refund_order(order_id: str):
         reason=str(payload.get("reason", "")),
     )
     return jsonify(serialize(order))
-

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from ..models import serialize
+from ..errors import ConflictError
+from ..models import ShippingMethod, serialize
 from .common import client_ip, container, json_body, request_role
 
 
@@ -78,6 +79,58 @@ def create_quote():
     return jsonify(quote.as_dict())
 
 
+@catalog_api.post("/shipping/options")
+def preview_shipping_options():
+    """Return the delivery choices a checkout can present before payment."""
+    payload = json_body()
+    services = container()
+    customer_id = str(payload.get("customer_id", ""))
+    customer = services.store.customer(customer_id)
+    country = str(payload.get("destination_country", customer.country)).upper()
+    state = str(payload.get("destination_state", customer.state)).upper()
+    items = payload.get("items")
+    options: list[dict[str, object]] = []
+
+    for method, label, eta_days in (
+        (ShippingMethod.STANDARD, "Standard delivery", 5),
+        (ShippingMethod.EXPRESS, "Express delivery", 2),
+        (ShippingMethod.SAME_DAY, "Same-day delivery", 0),
+        (ShippingMethod.PICKUP, "Store pickup", 0),
+    ):
+        try:
+            quote = services.pricing.quote(
+                customer_id=customer_id,
+                items=items,
+                shipping_method=method.value,
+                destination_country=country,
+                destination_state=state,
+            )
+        except ConflictError:
+            continue
+        if all(services.store.product(line.sku).digital for line in quote.lines):
+            if method is not ShippingMethod.STANDARD:
+                continue
+            label = "Instant digital delivery"
+            eta_days = 0
+        options.append(
+            {
+                "method": method.value,
+                "label": label,
+                "shipping": format(quote.shipping, ".2f"),
+                "estimated_delivery_days": eta_days,
+                "available": True,
+            }
+        )
+
+    return jsonify(
+        {
+            "destination": {"country": country, "state": state},
+            "items_count": len(items) if isinstance(items, list) else 0,
+            "options": options,
+        }
+    )
+
+
 @catalog_api.get("/inventory/<sku>")
 def get_inventory(sku: str):
     record = container().store.stock(sku.upper())
@@ -119,4 +172,3 @@ def evaluate_risk():
         client_ip=client_ip(),
     )
     return jsonify(serialize(result))
-

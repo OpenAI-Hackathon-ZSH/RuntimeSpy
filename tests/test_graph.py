@@ -41,7 +41,7 @@ class GraphTests(unittest.TestCase):
 
         self.assertEqual(graph["nodes"], [])
         self.assertEqual(graph["edges"], [])
-        self.assertIsNone(graph["hierarchy"]["files"][0]["root_node_id"])
+        self.assertEqual(graph["hierarchy"]["files"], [])
 
     def test_common_control_constructs_become_graph_nodes(self):
         source = (
