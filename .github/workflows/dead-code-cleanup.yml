@@ -140,8 +140,9 @@ jobs:
               f"Files modified: {len(recommendations['groups'])}"
           ], check=True)
 
-          # Push branch first
-          subprocess.run(["git", "push", "--force-with-lease", "origin", branch_name], check=True)
+          # Push branch first (delete old branch if exists)
+          subprocess.run(["git", "push", "origin", "--delete", branch_name], capture_output=True)  # Ignore if doesn't exist
+          subprocess.run(["git", "push", "origin", branch_name], check=True)
 
           # Create PR
           pr_body = f"## Automated Dead Code Removal\n\n"
