@@ -25,6 +25,24 @@ SOURCE = (
 
 
 class GraphTests(unittest.TestCase):
+    def test_package_initializers_are_excluded_from_the_logical_graph(self):
+        source = "from .service import Service\n"
+        snapshot = SourceSnapshot(
+            path="src/example/__init__.py",
+            module="example",
+            source=source,
+            content_hash=hashlib.sha256(source.encode()).hexdigest(),
+            executable_lines=(1,),
+        )
+
+        graph = graph_from_snapshots(
+            [snapshot], {("src/example/__init__.py", 1): 1}
+        )
+
+        self.assertEqual(graph["nodes"], [])
+        self.assertEqual(graph["edges"], [])
+        self.assertIsNone(graph["hierarchy"]["files"][0]["root_node_id"])
+
     def test_common_control_constructs_become_graph_nodes(self):
         source = (
             "def flows(items, value, manager):\n"
@@ -135,10 +153,62 @@ class GraphTests(unittest.TestCase):
         self.assertTrue(
             all(isinstance(edge["frequency"], int) for edge in first["edges"])
         )
-        defines_edge = next(
-            edge for edge in first["edges"] if edge["type"] == "defines"
+        self.assertNotIn(
+            "definition", {node["type"] for node in first["nodes"]}
         )
-        self.assertEqual(defines_edge["frequency"], 0)
+        self.assertNotIn(
+            "class_entry", {node["type"] for node in first["nodes"]}
+        )
+        self.assertNotIn("defines", {edge["type"] for edge in first["edges"]})
+
+    def test_class_and_constructor_entries_are_not_coverage_nodes(self):
+        source = (
+            "class Service:\n"
+            "    def __init__(self, enabled):\n"
+            "        if enabled:\n"
+            "            self.enabled = True\n"
+            "\n"
+            "Service(True)\n"
+        )
+        snapshot = SourceSnapshot(
+            path="src/service.py",
+            module="service",
+            source=source,
+            content_hash=hashlib.sha256(source.encode()).hexdigest(),
+            executable_lines=(1, 2, 3, 4, 6),
+        )
+
+        graph = graph_from_snapshots(
+            [snapshot],
+            {
+                ("src/service.py", 1): 1,
+                ("src/service.py", 2): 1,
+                ("src/service.py", 3): 1,
+                ("src/service.py", 4): 1,
+                ("src/service.py", 6): 1,
+            },
+            {
+                ("src/service.py", "<module>", 1): 1,
+                ("src/service.py", "Service.__init__", 2): 1,
+            },
+        )
+        nodes = graph["nodes"]
+        self.assertNotIn("definition", {node["type"] for node in nodes})
+        self.assertNotIn("class_entry", {node["type"] for node in nodes})
+        self.assertFalse(
+            any(
+                node["type"] == "function_entry"
+                and node["qualname"] == "Service.__init__"
+                for node in nodes
+            )
+        )
+        constructor_condition = next(
+            node
+            for node in nodes
+            if node["type"] == "condition"
+            and node["qualname"] == "Service.__init__"
+        )
+        self.assertEqual(constructor_condition["frequency"], 1)
 
     def test_runtime_export_contains_project_graph(self):
         with tempfile.TemporaryDirectory() as temporary:

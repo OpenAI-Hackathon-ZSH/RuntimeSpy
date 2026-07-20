@@ -213,7 +213,7 @@ Each item in `hierarchy.files` has:
 | `module` | Importable Python module name when one can be determined. |
 | `root_node_id` | The file's `module_entry` node. It can be `null` if the file could not be parsed. |
 | `node_ids` | IDs of every node belonging to this file. |
-| `scopes` | Lightweight index of module, class, and function entry nodes. |
+| `scopes` | Lightweight index of module and function entry nodes. Classes and constructors are structural and are not coverage nodes. |
 
 ### Node contract
 
@@ -248,7 +248,7 @@ Supported node types are grouped below:
 
 | Category | Node types |
 | --- | --- |
-| Scope and structure | `module_entry`, `class_entry`, `function_entry`, `definition`, `basic_block` |
+| Scope and structure | `module_entry`, `function_entry`, `basic_block` |
 | Conditionals | `condition`, `branch_true`, `branch_false` |
 | Loops | `for_iteration`, `while_condition`, `loop_body`, `loop_else`, `loop_exit` |
 | Exceptions | `try_body`, `except_handler`, `try_else`, `finally_block` |
@@ -272,9 +272,8 @@ Every item in `graph.edges` contains:
 
 | Edge type | Meaning |
 | --- | --- |
-| `entry` | Enter the first child node of a module, scope, branch, or region. |
+| `entry` | Enter the first child node of a module, function, branch, or region. |
 | `next` | Continue sequentially to the next logical node. |
-| `defines` | Connect a definition statement to its function/class scope. |
 | `true`, `false` | Select an `if` outcome. |
 | `iterate`, `loop_back`, `exit` | Enter a loop body, repeat it, or leave the loop. |
 | `exception`, `normal`, `finally` | Exception handler, normal `try` completion, or finalization path. |
@@ -283,7 +282,7 @@ Every item in `graph.edges` contains:
 RuntimeSpy emits `0` instead of `null` for edges without a reliable traversal
 counter. For measured control edges (`true`, `false`, `iterate`, `exit`,
 `exception`, `case`, and `unmatched`), zero means that the path was not observed.
-For structural edges such as `entry`, `next`, `defines`, `loop_back`, `normal`,
+For structural edges such as `entry`, `next`, `loop_back`, `normal`,
 and `finally`, zero only means “no edge-level counter”; the edge still defines
 the graph topology.
 
@@ -297,7 +296,7 @@ from the recorded workload.
 For a graph UI, a practical ingestion and display strategy is:
 
 1. Index `graph.nodes` by `id`, then resolve every edge through `from` and `to`.
-2. Use `hierarchy.files` for the file tree and `scopes` for function/class drill-down.
+2. Use `hierarchy.files` for the file tree and `scopes` for function drill-down.
 3. Use control-flow `edges` for layout; use `parent_id` only for containment or collapsing groups.
 4. Color nodes by `frequency`. A `log1p(frequency)` scale works better than a linear scale when hot loops dominate the counts.
 5. Render `frequency === 0` as “unobserved” with a distinct neutral or warning treatment, not as confirmed dead code.
@@ -305,9 +304,13 @@ For a graph UI, a practical ingestion and display strategy is:
 7. For measured sibling edges, show ratios such as `72 / (72 + 28) = 72%` to explain branch behavior.
 8. Open the source viewer using `path` and the start/end coordinates when a node is selected.
 
-The first graph version recognizes module and function entry, basic blocks,
-`if/elif/else` branches, `for/while` loops, `try/except/else/finally`,
-`match/case`, `with`, definitions, returns, raises, breaks, and continues.
+The graph recognizes module and function entry, basic blocks, `if/elif/else`
+branches, `for/while` loops, `try/except/else/finally`, `match/case`, `with`,
+returns, raises, breaks, and continues. Class and definition syntax are
+structural metadata, and constructor entry points are lifecycle plumbing, so
+they are intentionally not emitted as coverage nodes. Logic within a constructor
+(for example, an `if` branch) remains in the graph. Package `__init__.py` files
+are also excluded, avoiding import-only nodes in the graph.
 
 For a precise collection window, stop it explicitly:
 

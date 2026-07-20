@@ -252,48 +252,51 @@ class _FileGraphBuilder:
         parent_id: str,
         qualname: str,
     ) -> _Flow:
-        definition_line = (
-            self.lines[statement.lineno - 1]
-            if 0 < statement.lineno <= len(self.lines)
-            else ""
-        )
-        definition_location = (
-            statement.lineno,
-            statement.col_offset,
-            statement.lineno,
-            len(definition_line),
-        )
-        definition_id = self._add_node(
-            "definition",
-            definition_location,
-            entry_line=statement.lineno,
-            parent_id=parent_id,
-            qualname=qualname,
-            label=f"define {statement.name}",
-        )
         nested_qualname = (
             statement.name if qualname == "<module>" else f"{qualname}.{statement.name}"
         )
-        scope_type = "class_entry" if isinstance(statement, ast.ClassDef) else "function_entry"
+        if isinstance(statement, ast.ClassDef):
+            # A class statement is structural: its execution does not mean an
+            # instance was created. Its class-body setup is likewise excluded;
+            # retain only callable members as logical coverage nodes.
+            for member in statement.body:
+                if isinstance(
+                    member, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+                ):
+                    self._definition(
+                        member, parent_id=parent_id, qualname=nested_qualname
+                    )
+            return _Flow(None, ())
+
+        if statement.name == "__init__":
+            # Constructors are lifecycle plumbing rather than a business
+            # control-flow boundary. Keep any executable logic inside them,
+            # but do not expose a standalone, easily misread entry node.
+            self._build_region(
+                statement.body, parent_id=parent_id, qualname=nested_qualname
+            )
+            return _Flow(None, ())
+
         scope_id = self._add_node(
-            scope_type,
+            "function_entry",
             _node_range(statement),
             entry_line=_entry_line(statement.body, statement.lineno),
-            parent_id=definition_id,
+            parent_id=parent_id,
             qualname=nested_qualname,
             label=nested_qualname,
             frequency=self.starts.get(nested_qualname, 0),
         )
         self.scopes.append(
-            {"id": scope_id, "type": scope_type, "qualname": nested_qualname}
+            {"id": scope_id, "type": "function_entry", "qualname": nested_qualname}
         )
-        self._add_edge(definition_id, scope_id, "defines")
         body_flow = self._build_region(
             statement.body, parent_id=scope_id, qualname=nested_qualname
         )
         if body_flow.entry is not None:
             self._add_edge(scope_id, body_flow.entry, "entry")
-        return _Flow(definition_id, (definition_id,))
+        # Defining a function does not connect the module's executable control
+        # flow to that function body.  The entry node is reached by a call.
+        return _Flow(None, ())
 
     def _if(
         self,
@@ -698,6 +701,19 @@ class _FileGraphBuilder:
         return _Flow(entry, exits)
 
     def build(self) -> dict[str, Any]:
+        if self.path == "__init__.py" or self.path.endswith("/__init__.py"):
+            # Package initializers are import/lifecycle plumbing. They do not
+            # represent application control flow and would otherwise create a
+            # misleading zero-frequency module root.
+            return {
+                "path": self.path,
+                "module": self.module,
+                "root_node_id": None,
+                "node_ids": [],
+                "scopes": [],
+                "nodes": [],
+                "edges": [],
+            }
         try:
             tree = ast.parse(self.source, filename=self.path)
         except SyntaxError:

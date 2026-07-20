@@ -87,7 +87,7 @@ def call(
     return HttpResult(status_code, body, response_headers)
 
 
-def run_scenario(base_url: str, *, interval_seconds: float = 2.0) -> None:
+def run_scenario(base_url: str, *, interval_seconds: float = 0.5) -> None:
     call = PacedCaller(interval_seconds)
     scenario_id = str(time.time_ns())
 
@@ -510,8 +510,8 @@ def main() -> None:
     parser.add_argument(
         "--interval",
         type=float,
-        default=2.0,
-        help="seconds between requests (default: 2.0; use 0 for no delay)",
+        default=0.5,
+        help="seconds between requests (default: 0.5; use 0 for no delay)",
     )
     args = parser.parse_args()
     if args.interval < 0:
