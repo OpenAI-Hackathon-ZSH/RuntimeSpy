@@ -1,62 +1,77 @@
 ---
 name: delete-dead-code
-description: Find and safely remove Python dead code in this repository using RuntimeSpy production-traffic observations. Use when asked to identify, review, or remove unused logic from the commerce demo or another RuntimeSpy-instrumented project.
+description: Generate reviewable GitHub pull requests that remove Python code unobserved by RuntimeSpy. Runtime evidence may come from the cloud RuntimeSpy backend, a local backend, or an export JSON file.
 ---
 
-# Remove observed-dead code with RuntimeSpy
+# Generate dead-code cleanup PRs
 
-This repository's `demo/` service has been instrumented and exercised with
-realistic online traffic. RuntimeSpy records logical control-flow nodes that
-were not observed. That evidence is available from:
+Use RuntimeSpy only as evidence. Do **not** call a backend cleanup endpoint:
+the agent performs the analysis, edits, verification, branch creation, and PR
+creation locally. A zero-frequency node means unobserved in a traffic window,
+not proven dead code.
+
+## Inputs
+
+Choose exactly one source of runtime evidence:
 
 ```bash
+# Cloud RuntimeSpy backend (default)
 curl --fail --silent --show-error http://34.226.45.56:8000/stats/clean
+
+# Local RuntimeSpy backend
+curl --fail --silent --show-error http://localhost:8000/stats/clean
+
+# An exported graph supplied by the user
+<instrumentation.json>
 ```
 
-The response is a RuntimeSpy export envelope. Inspect `graph.nodes`; every
-returned node identifies the source it belongs to with at least `path`,
-`start_line`, and `end_line`, and usually also includes `type`, `label`,
-`qualname`, columns, and `frequency`.
+The graph is an export envelope. Candidates are `graph.nodes` with
+`frequency: 0`; they identify source through fields such as `path`,
+`start_line`, `end_line`, `type`, `label`, and `qualname`.
 
 ## Workflow
 
-1. Fetch the API response first. Treat every returned node as a candidate, not
-   automatic proof: it was not hit by the recorded production traffic.
-2. Group candidates by `path` and inspect the current source at the reported
-   line range. The source may have changed after the graph was generated, so
-   never apply line ranges mechanically.
-3. Identify the smallest coherent deletion unit: an unused endpoint and its
-   private helper, an unreachable branch, a stale feature flag path, or an
-   unused service method. Do not delete an isolated line from the middle of a
-   valid control-flow construct.
-4. Before deleting a public or shared symbol, search the repository for callers
-   and registrations with `rg`. Check Flask blueprint registration, OpenAPI
-   declarations, tests, scripts, and documentation as applicable.
-5. Remove all now-orphaned pieces of the feature together. This is mandatory:
-   update or remove the implementation, route/OpenAPI entry, tests that only
-   cover it, imports, README instructions, scripts, examples, and any other
-   documentation or configuration that mentions the removed behavior. Do not
-   leave stale tests, broken examples, or undocumented route references behind.
-   Keep code that is still reachable even if one particular branch was
+When asked to run this skill with `--limit N`:
+
+1. Load the selected runtime evidence and list the zero-frequency candidates.
+   Fetch the cloud source only when no local URL or file was provided.
+2. Group candidates into the smallest coherent deletion units. Respect
+   `--limit N` as the maximum number of PRs, not a promise to create unsafe
+   PRs.
+3. Inspect each current source location; the graph's line numbers may be stale.
+   Use static searches to check callers, imports, Flask blueprint registration,
+   OpenAPI declarations, tests, scripts, configuration, examples, and docs.
+4. Only select a group when runtime evidence and static analysis both support
+   removal. Never remove startup/infrastructure code, security or error paths,
+   public API contracts, or reachable code merely because one branch was
    unobserved.
-6. Run the relevant test suite and a syntax check. For the demo, prefer:
+5. For every selected group, make the complete local cleanup: implementation,
+   orphaned imports, registrations, tests solely for the removed feature, and
+   stale documentation. Do not leave broken imports or route declarations.
+6. Run the relevant tests and a syntax check. For the demo prefer:
 
    ```bash
    PYTHONPATH=demo/src demo/.venv/bin/python -m unittest discover -s demo/tests -v
    ```
 
-7. Report exactly which RuntimeSpy nodes motivated each deletion, what static
-   reference checks were performed, and the verification results.
+7. Create one focused branch, commit, push, and GitHub PR per safe group using
+   `gh`. The PR body must state the RuntimeSpy nodes, static-reference checks,
+   test results, confidence, and remaining risk. If GitHub authentication is
+   unavailable, complete the analysis and local patch but stop before pushing
+   and clearly report the required `gh auth login` action.
 
-## Safety rules
+## Invocation examples
 
-- A zero-frequency node means **unobserved in this traffic window**, not a
-  mathematical proof of dead code. Preserve error handling, security checks,
-  migration paths, and explicitly supported API contracts unless the user has
-  authorized their removal.
-- Prefer removing code only when runtime evidence and static reference analysis
-  agree.
-- Do not delete package initialization, application startup, or infrastructure
-  code merely because it is absent from request-level traffic.
-- Do not modify the reporting service or production endpoint while performing a
-  cleanup unless explicitly asked.
+```text
+delete-dead-code --limit 2
+delete-dead-code --source http://localhost:8000 --limit 1
+delete-dead-code instrumentation.json --limit 3
+```
+
+## Safety requirements
+
+- Do not create a PR from zero-frequency evidence alone.
+- Prefer no PR to an uncertain deletion.
+- Keep each PR independent, small, and easy to revert.
+- Never modify the RuntimeSpy reporting service or its endpoint as part of a
+  cleanup.
