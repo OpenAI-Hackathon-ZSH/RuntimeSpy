@@ -22,7 +22,7 @@ jobs:
 
       - name: Fetch instrumentation report
         run: |
-          curl -s http://127.0.0.1:8000/stats/clean > report.json
+          curl -s http://34.226.45.56:8000/stats/clean > report.json
           echo "✓ Report fetched ($(wc -c < report.json) bytes)"
 
       - name: Analyze dead code
