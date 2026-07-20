@@ -41,7 +41,7 @@ unrelated packages stay out of the graph.
 pricing, inventory, risk, order, fulfillment, refund, and administration flows.
 The server and traffic generator run as two independent commands, so traffic can
 be replayed without restarting the instrumented service. See
-[`demo/README.md`](demo/README.md) for setup and usage.
+[`demo/README.md`](demo/README.md) for local usage and public AWS EC2 deployment.
 
 ## Requirements
 

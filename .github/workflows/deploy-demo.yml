@@ -1,0 +1,127 @@
+name: Deploy commerce demo
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/deploy-demo.yml"
+      - "cdk.json"
+      - "infra/**"
+      - "demo/**"
+      - "src/**"
+      - "pyproject.toml"
+      - ".dockerignore"
+
+concurrency:
+  group: deploy-commerce-demo
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
+  RUNTIMESPY_REPORT_ENDPOINT: ${{ secrets.RUNTIME_SPY_REPORT_ENDPOINT }}
+
+jobs:
+  deploy:
+    name: Deploy to public EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.1.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      - name: Install application and CDK dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r infra/requirements.txt -e . -e ./demo
+          npm install --global aws-cdk@2
+
+      - name: Run demo tests
+        run: |
+          python -m unittest \
+            demo.tests.test_api \
+            demo.tests.test_services \
+            demo.tests.test_traffic \
+            -q
+
+      - name: Bootstrap CDK environment
+        run: |
+          account_id="$(aws sts get-caller-identity --query Account --output text)"
+          cdk bootstrap "aws://${account_id}/${AWS_REGION}"
+
+      - name: Deploy EC2 service
+        run: |
+          cdk deploy RuntimeSpyDemo \
+            --require-approval never \
+            --outputs-file cdk-outputs.json
+
+      - name: Read stack outputs
+        id: stack
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          outputs = json.load(open("cdk-outputs.json", encoding="utf-8"))
+          stack = outputs["RuntimeSpyDemo"]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"service_url={stack['ServiceUrl']}\n")
+              output.write(f"swagger_url={stack['SwaggerUrl']}\n")
+              output.write(f"instance_id={stack['InstanceId']}\n")
+          PY
+
+      - name: Verify public access
+        env:
+          SERVICE_URL: ${{ steps.stack.outputs.service_url }}
+        run: |
+          for attempt in $(seq 1 36); do
+            if curl --fail --silent --show-error --max-time 10 \
+              "${SERVICE_URL}/health" > /dev/null; then
+              echo "Public health check succeeded: ${SERVICE_URL}/health"
+              exit 0
+            fi
+            echo "Waiting for EC2 bootstrap (${attempt}/36)..."
+            sleep 10
+          done
+          echo "EC2 did not become publicly reachable within six minutes."
+          exit 1
+
+      - name: Publish service URLs
+        env:
+          SERVICE_URL: ${{ steps.stack.outputs.service_url }}
+          SWAGGER_URL: ${{ steps.stack.outputs.swagger_url }}
+          INSTANCE_ID: ${{ steps.stack.outputs.instance_id }}
+        run: |
+          python - <<'PY'
+          import os
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## RuntimeSpy commerce demo deployed to EC2\n\n")
+              summary.write(f"- Instance: `{os.environ['INSTANCE_ID']}`\n")
+              summary.write(f"- Service: {os.environ['SERVICE_URL']}\n")
+              summary.write(f"- Swagger: {os.environ['SWAGGER_URL']}\n")
+          PY

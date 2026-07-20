@@ -151,6 +151,66 @@ Roles are supplied through the `X-Role` header. Useful demo roles are
 `customer`, `support`, `support-lead`, `warehouse`, `risk-analyst`, `finance`,
 `auditor`, and `admin`.
 
+## Deploy to a public AWS EC2 instance
+
+The repository includes a Python CDK stack in `infra/`. It builds
+`demo/Dockerfile`, publishes the image to the CDK bootstrap ECR repository, and
+runs it on an Amazon Linux 2023 `t3.micro` EC2 instance. The stack creates a
+dedicated VPC with no NAT gateway, assigns a static Elastic IP, and maps public
+port 80 to the container's port 8080. The security group allows public HTTP but
+does not expose SSH.
+
+The deployed service reports RuntimeSpy events to
+`http://34.226.45.56:8000` by default, using `/report/full_graph` and
+`/report/node`.
+
+In the GitHub repository, open **Settings → Secrets and variables → Actions**
+and create these repository secrets:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_REGION`
+- `AWS_SECRET_ACCESS_KEY`
+
+The IAM principal behind those keys must be allowed to bootstrap and deploy CDK
+stacks that use CloudFormation, EC2, VPC, ECR, S3, SSM, and IAM. For a disposable
+hackathon account, `AdministratorAccess` is the simplest setup; for a shared or
+production account, use a dedicated least-privilege deployment principal.
+
+Optional configuration:
+
+- `AWS_REGION` can alternatively be a repository variable. A secret takes
+  precedence, and the default is `us-east-1`.
+- Repository secret `RUNTIME_SPY_REPORT_ENDPOINT` overrides the default
+  RuntimeSpy reporting service URL.
+
+The **Deploy commerce demo** workflow runs automatically when relevant files
+are pushed to `main`. It can also be started manually from the GitHub Actions
+page. The workflow bootstraps the selected account/region, runs the demo tests,
+builds the container, deploys the CDK stack, and waits for the public `/health`
+endpoint. It writes the instance ID, public service URL, and Swagger URL to the
+workflow summary.
+
+To deploy the same stack locally:
+
+```bash
+python -m venv infra/.venv
+source infra/.venv/bin/activate
+python -m pip install -r infra/requirements.txt
+npm install --global aws-cdk@2
+
+account_id="$(aws sts get-caller-identity --query Account --output text)"
+cdk bootstrap "aws://${account_id}/${AWS_REGION:-us-east-1}"
+cdk deploy RuntimeSpyDemo --require-approval never
+```
+
+The EC2 instance, EBS volume, Elastic IP/public IPv4 address, and image storage
+incur AWS charges while they exist. Remove the stack when it is no longer
+needed:
+
+```bash
+cdk destroy RuntimeSpyDemo
+```
+
 ## Tests
 
 ```bash
