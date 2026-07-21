@@ -16,6 +16,8 @@ light mode for fast iteration. For complex work, including AST instrumentation
 and system-wide refactoring, we used Codex-5.6 advanced mode, which could reason
 deeply and complete difficult tasks with high accuracy.
 
+https://github.com/user-attachments/assets/9552ec28-fdc6-4dcc-8aa9-371020e36850
+
 ## Why RuntimeSpy
 
 AI coding agents are good at adding code, but much less certain about removing
