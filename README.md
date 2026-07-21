@@ -16,6 +16,10 @@ light mode for fast iteration. For complex work, including AST instrumentation
 and system-wide refactoring, we used Codex-5.6 advanced mode, which could reason
 deeply and complete difficult tasks with high accuracy.
 
+We also used Codex with the `frontend-app-builder` skill to improve the visual
+design and overall appearance of the
+[RuntimE.Razor website](https://d1ywrvevj4vy41.cloudfront.net/).
+
 https://github.com/user-attachments/assets/9552ec28-fdc6-4dcc-8aa9-371020e36850
 
 ## Why RuntimeSpy
