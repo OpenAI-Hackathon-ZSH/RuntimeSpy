@@ -5,12 +5,10 @@ from __future__ import annotations
 from decimal import Decimal
 
 from ..models import Customer, OrderLine, RiskResult, ShippingMethod
-from ..store import CommerceStore
 
 
 class RiskService:
-    def __init__(self, store: CommerceStore, *, review_threshold: int = 45, block_threshold: int = 75):
-        self.store = store
+    def __init__(self, *, review_threshold: int = 45, block_threshold: int = 75):
         self.review_threshold = review_threshold
         self.block_threshold = block_threshold
 
