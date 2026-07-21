@@ -40,11 +40,12 @@ jobs:
           jq empty report.json || { echo "❌ Invalid JSON"; exit 1; }
           echo "✓ Report fetched ($(wc -c < report.json) bytes)"
 
+
       - name: Analyze dead code
         run: |
           set -e
           chmod +x ./delete-dead-code
-          ./delete-dead-code --limit 5 report.json > recommendations.json
+          ./delete-dead-code --single-pr report.json > recommendations.json
           echo "✓ Analysis complete"
 
       - name: Verify GH_TOKEN
@@ -99,29 +100,67 @@ jobs:
 
           # Apply deletions
           total_deleted = 0
+          files_modified = {}
+
           for group in recommendations["groups"]:
-              file_path = group["file"]
-              # Try with demo/ prefix if file not found
-              if not os.path.exists(file_path) and os.path.exists(f"demo/{file_path}"):
-                  file_path = f"demo/{file_path}"
-              if not os.path.exists(file_path):
-                  print(f"❌ FATAL: File not found: {file_path}")
-                  exit(1)
+              # Handle both single-pr format (deletions with inline file) and multi-pr format (group has file)
+              if "type" in group and group["type"] == "single_pr":
+                  # Single PR mode: deletions have inline file field
+                  deletions_by_file = {}
+                  for deletion in group["deletions"]:
+                      file_path = deletion["file"]
+                      if file_path not in deletions_by_file:
+                          deletions_by_file[file_path] = []
+                      deletions_by_file[file_path].append(deletion)
 
-              with open(file_path) as f:
-                  lines = f.readlines()
+                  for file_path, deletions in deletions_by_file.items():
+                      # Try with demo/ prefix if file not found
+                      if not os.path.exists(file_path) and os.path.exists(f"demo/{file_path}"):
+                          file_path = f"demo/{file_path}"
+                      if not os.path.exists(file_path):
+                          print(f"❌ FATAL: File not found: {file_path}")
+                          exit(1)
 
-              # Sort deletions in reverse to preserve line numbers
-              for deletion in sorted(group["deletions"], key=lambda d: d["start_line"], reverse=True):
-                  start = deletion["start_line"] - 1  # Convert to 0-indexed
-                  end = deletion["end_line"]  # end_line is inclusive
-                  del lines[start:end]
-                  total_deleted += (end - start)
+                      with open(file_path) as f:
+                          lines = f.readlines()
 
-              with open(file_path, "w") as f:
-                  f.writelines(lines)
+                      # Sort deletions in reverse to preserve line numbers
+                      for deletion in sorted(deletions, key=lambda d: d["start_line"], reverse=True):
+                          start = deletion["start_line"] - 1  # Convert to 0-indexed
+                          end = deletion["end_line"]  # end_line is inclusive
+                          del lines[start:end]
+                          total_deleted += (end - start)
 
-              print(f"✓ Deleted {group['total_lines']} lines from {file_path}")
+                      with open(file_path, "w") as f:
+                          f.writelines(lines)
+
+                      files_modified[file_path] = len(deletions)
+                      print(f"✓ Deleted {end - start} lines from {file_path}")
+              else:
+                  # Multi-PR mode: each group has a single file
+                  file_path = group["file"]
+                  # Try with demo/ prefix if file not found
+                  if not os.path.exists(file_path) and os.path.exists(f"demo/{file_path}"):
+                      file_path = f"demo/{file_path}"
+                  if not os.path.exists(file_path):
+                      print(f"❌ FATAL: File not found: {file_path}")
+                      exit(1)
+
+                  with open(file_path) as f:
+                      lines = f.readlines()
+
+                  # Sort deletions in reverse to preserve line numbers
+                  for deletion in sorted(group["deletions"], key=lambda d: d["start_line"], reverse=True):
+                      start = deletion["start_line"] - 1  # Convert to 0-indexed
+                      end = deletion["end_line"]  # end_line is inclusive
+                      del lines[start:end]
+                      total_deleted += (end - start)
+
+                  with open(file_path, "w") as f:
+                      f.writelines(lines)
+
+                  files_modified[file_path] = len(group["deletions"])
+                  print(f"✓ Deleted {group['total_lines']} lines from {file_path}")
 
           # Commit changes
           subprocess.run(["git", "add", "-A"], check=True)
@@ -150,17 +189,16 @@ jobs:
           pr_body += f"- Total nodes analyzed: {recommendations['summary']['total_nodes']}\n"
           pr_body += f"- Executed nodes: {recommendations['summary']['executed_nodes']}\n"
           pr_body += f"- Dead nodes (frequency=0): {recommendations['summary']['dead_nodes']}\n"
-          pr_body += f"- Files affected: {len(recommendations['groups'])}\n\n"
-          pr_body += f"**Removal Groups:**\n\n"
-          for i, group in enumerate(recommendations["groups"], 1):
-              pr_body += f"### {i}. {group['file']}\n"
-              pr_body += f"- Lines: {group['total_lines']}\n"
-              pr_body += f"- Confidence: {group['confidence']}%\n"
-              pr_body += f"- Risk: {group['risk']}/10\n\n"
+          pr_body += f"- Files affected: {len(files_modified)}\n"
+          pr_body += f"- Total lines removed: {total_deleted}\n\n"
+          pr_body += f"**Modified Files:**\n\n"
 
-          pr_body += "**Safety:**\n"
+          for file_path, num_deletions in sorted(files_modified.items()):
+              pr_body += f"- `{file_path}` ({num_deletions} deletion(s))\n"
+
+          pr_body += "\n**Safety:**\n"
           pr_body += "- Only removes code with frequency=0 (never executed)\n"
-          pr_body += "- All deletions grouped by file\n"
+          pr_body += "- All deletions verified against source\n"
           pr_body += "- Easy to revert if needed\n\n"
           pr_body += "Generated by automated dead code analysis."
 

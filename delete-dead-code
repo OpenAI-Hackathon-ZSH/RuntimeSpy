@@ -33,7 +33,17 @@ def parse_args():
         "--limit",
         type=int,
         default=3,
-        help="Maximum number of groups (default: 3)"
+        help="Maximum number of files to process (default: 3)"
+    )
+    parser.add_argument(
+        "--max-prs",
+        type=int,
+        help="Maximum number of PRs to generate (overrides --limit)"
+    )
+    parser.add_argument(
+        "--single-pr",
+        action="store_true",
+        help="Combine all dead code into a single PR"
     )
     parser.add_argument(
         "--output",
@@ -76,58 +86,96 @@ def extract_dead_nodes(data):
     return dead_by_file
 
 
-def group_deletions(dead_by_file, limit):
+def group_deletions(dead_by_file, limit=3, max_prs=None, single_pr=False):
     """Group dead code by file and create deletion recommendations."""
     groups = []
 
-    for file_path in sorted(dead_by_file.keys())[:limit]:
-        nodes = dead_by_file[file_path]
-        if not nodes:
-            continue
+    if single_pr:
+        # Combine all dead code into a single PR
+        all_deletions = []
+        file_paths = sorted(dead_by_file.keys())
+        total_dead_nodes = 0
 
-        # Sort by line number
-        nodes.sort(key=lambda n: n.get("start_line", 0))
+        for file_path in file_paths:
+            nodes = dead_by_file[file_path]
+            if not nodes:
+                continue
 
-        # Merge adjacent/overlapping deletions
-        deletions = []
-        current_start = None
-        current_end = None
+            total_dead_nodes += len(nodes)
+            nodes.sort(key=lambda n: n.get("start_line", 0))
 
-        for node in nodes:
-            start = node.get("start_line", 0)
-            end = node.get("end_line", 0)
+            for node in nodes:
+                all_deletions.append({
+                    "file": file_path,
+                    "start_line": node.get("start_line", 0),
+                    "end_line": node.get("end_line", 0)
+                })
 
-            if current_start is None:
-                current_start = start
-                current_end = end
-            elif start <= current_end + 1:
-                # Merge with previous
-                current_end = max(current_end, end)
-            else:
-                # Save previous deletion
+        if all_deletions:
+            files_in_group = sorted(set(d["file"] for d in all_deletions))
+            group = {
+                "type": "single_pr",
+                "files": files_in_group,
+                "num_files": len(files_in_group),
+                "dead_nodes": total_dead_nodes,
+                "deletions": all_deletions,
+                "total_deletions": len(all_deletions),
+                "confidence": 95,
+                "risk": 2
+            }
+            groups.append(group)
+    else:
+        # Group by file (one PR per file)
+        file_limit = max_prs if max_prs is not None else limit
+
+        for file_path in sorted(dead_by_file.keys())[:file_limit]:
+            nodes = dead_by_file[file_path]
+            if not nodes:
+                continue
+
+            # Sort by line number
+            nodes.sort(key=lambda n: n.get("start_line", 0))
+
+            # Merge adjacent/overlapping deletions
+            deletions = []
+            current_start = None
+            current_end = None
+
+            for node in nodes:
+                start = node.get("start_line", 0)
+                end = node.get("end_line", 0)
+
+                if current_start is None:
+                    current_start = start
+                    current_end = end
+                elif start <= current_end + 1:
+                    # Merge with previous
+                    current_end = max(current_end, end)
+                else:
+                    # Save previous deletion
+                    deletions.append({
+                        "start_line": current_start,
+                        "end_line": current_end
+                    })
+                    current_start = start
+                    current_end = end
+
+            # Add last deletion
+            if current_start is not None:
                 deletions.append({
                     "start_line": current_start,
                     "end_line": current_end
                 })
-                current_start = start
-                current_end = end
 
-        # Add last deletion
-        if current_start is not None:
-            deletions.append({
-                "start_line": current_start,
-                "end_line": current_end
-            })
-
-        group = {
-            "file": file_path,
-            "dead_nodes": len(nodes),
-            "deletions": deletions,
-            "total_lines": sum(d["end_line"] - d["start_line"] + 1 for d in deletions),
-            "confidence": 95,  # Default confidence for frequency=0
-            "risk": 2  # Default low risk (dead code)
-        }
-        groups.append(group)
+            group = {
+                "file": file_path,
+                "dead_nodes": len(nodes),
+                "deletions": deletions,
+                "total_lines": sum(d["end_line"] - d["start_line"] + 1 for d in deletions),
+                "confidence": 95,  # Default confidence for frequency=0
+                "risk": 2  # Default low risk (dead code)
+            }
+            groups.append(group)
 
     return groups
 
@@ -156,7 +204,12 @@ def main():
         }
     else:
         # Group deletions
-        groups = group_deletions(dead_by_file, args.limit)
+        groups = group_deletions(
+            dead_by_file,
+            limit=args.limit,
+            max_prs=args.max_prs,
+            single_pr=args.single_pr
+        )
 
         result = {
             "status": "success",

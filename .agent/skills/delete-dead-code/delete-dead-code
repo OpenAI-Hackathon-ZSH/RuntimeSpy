@@ -2,190 +2,54 @@
 """
 Codex Skill: Delete Dead Code
 
-Analyzes RuntimeSpy instrumentation data and automatically creates GitHub PRs
-to remove dead code (nodes with frequency=0).
+Triggers the dead-code-cleanup GitHub Actions workflow to analyze the latest
+RuntimeSpy instrumentation report and create a PR with dead code deletions.
 
 Usage:
-  delete-dead-code [OPTIONS] [INPUT_FILE]
-  delete-dead-code --limit 5 instrumentation.json
-  delete-dead-code --dry-run report.json
+  delete-dead-code          # Trigger the workflow
 """
 
-import argparse
-import json
-import sys
 import subprocess
-from pathlib import Path
-from urllib.request import Request, urlopen
-from urllib.error import HTTPError, URLError
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Remove dead code using RuntimeSpy instrumentation data",
-        prog="delete-dead-code"
-    )
-    parser.add_argument(
-        "input_file",
-        nargs="?",
-        help="Instrumentation JSON file (or stdin if omitted)"
-    )
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=3,
-        help="Maximum number of PR groups (default: 3)"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview without creating PRs"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show detailed output"
-    )
-    parser.add_argument(
-        "--backend-url",
-        default="http://34.226.45.56:8000",
-        help="Backend URL (default: http://34.226.45.56:8000)"
-    )
-    return parser.parse_args()
-
-
-def read_instrumentation(input_file, backend_url):
-    """Read instrumentation JSON from file, stdin, or backend."""
-    try:
-        if input_file:
-            with open(input_file) as f:
-                return json.load(f)
-        elif not sys.stdin.isatty():
-            try:
-                return json.load(sys.stdin)
-            except (json.JSONDecodeError, ValueError):
-                # Fall back to backend if stdin is empty or invalid
-                return fetch_from_backend(backend_url)
-        else:
-            # Fetch from backend if no input provided
-            return fetch_from_backend(backend_url)
-    except FileNotFoundError as e:
-        print(f"❌ Error: File not found: {e}")
-        sys.exit(1)
-
-
-def fetch_from_backend(backend_url):
-    """Fetch instrumentation data from backend."""
-    try:
-        url = f"{backend_url.rstrip('/')}/stats/clean"
-        with urlopen(url, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError) as e:
-        print(f"❌ Error: Could not fetch from backend: {e}")
-        sys.exit(1)
-
-
-def extract_summary(data):
-    """Extract summary from instrumentation data."""
-    return data.get("summary", {})
-
-
-def count_dead_nodes(data):
-    """Count nodes with frequency=0."""
-    nodes = data.get("graph", {}).get("nodes", [])
-    return len([n for n in nodes if n.get("frequency", 0) == 0])
-
-
-def trigger_cleanup(backend_url, limit, dry_run):
-    """Trigger cleanup on backend."""
-    try:
-        endpoint = f"trigger/cleanup?limit={limit}"
-        if dry_run:
-            endpoint += "&dry-run=true"
-
-        url = f"{backend_url.rstrip('/')}/{endpoint}"
-        request = Request(url, method="POST")
-        request.add_header("Content-Type", "application/json")
-
-        if dry_run:
-            print(f"🔍 DRY RUN: Would send request to {url}")
-            return {"status": "dry_run", "message": "Preview mode"}
-
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError) as e:
-        print(f"❌ Backend error: {e}")
-        sys.exit(1)
-
-
-def send_instrumentation(backend_url, data):
-    """Send instrumentation data to backend if not already there."""
-    try:
-        url = f"{backend_url.rstrip('/')}/report/full_graph"
-        request = Request(
-            url,
-            data=json.dumps(data).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-
-        with urlopen(request, timeout=10) as response:
-            result = json.loads(response.read().decode("utf-8"))
-            if result.get("status") == "success":
-                return True
-    except Exception as e:
-        if "--verbose" in sys.argv:
-            print(f"⚠️  Could not send instrumentation: {e}")
-    return False
+import sys
 
 
 def main():
-    args = parse_args()
+    print("🔄 Triggering GitHub Actions workflow: dead-code-cleanup.yml")
+    print("")
 
-    print("🚀 Codex Skill: Delete Dead Code")
-    print("=" * 60)
+    try:
+        result = subprocess.run(
+            ["gh", "workflow", "run", "dead-code-cleanup.yml"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
 
-    # 1. Read instrumentation data
-    print("\n📊 Reading instrumentation data...")
-    data = read_instrumentation(args.input_file, args.backend_url)
-
-    # 2. Analyze data
-    summary = extract_summary(data)
-    dead_count = count_dead_nodes(data)
-
-    print(f"\n✓ Instrumentation loaded")
-    print(f"   Total nodes: {summary.get('nodes', '?')}")
-    print(f"   Executed: {summary.get('executed_nodes', '?')}")
-    print(f"   Dead (frequency=0): {dead_count}")
-
-    if dead_count == 0:
-        print("\n✓ No dead code found!")
+        print("✅ Workflow triggered successfully")
+        print("")
+        print("The workflow will:")
+        print("  1. Fetch the latest instrumentation report from RuntimeSpy backend")
+        print("  2. Identify all nodes with frequency=0")
+        print("  3. Create a GitHub PR with deletions")
+        print("")
+        print("View the workflow run:")
+        print("  gh run list --workflow=dead-code-cleanup.yml --limit=1")
+        print("")
         return 0
 
-    # 3. Send to backend if needed
-    if args.verbose:
-        print(f"\n🔄 Ensuring backend has data...")
-        send_instrumentation(args.backend_url, data)
-
-    # 4. Trigger cleanup
-    print(f"\n🔧 Triggering dead code cleanup...")
-    if args.dry_run:
-        print("   (DRY RUN MODE - no PRs will be created)")
-
-    result = trigger_cleanup(args.backend_url, args.limit, args.dry_run)
-
-    if result.get("status") == "success" or result.get("status") == "dry_run":
-        print(f"\n✅ {result.get('message', 'Success')}")
-
-        if args.dry_run:
-            print("\n📋 To create actual PRs, run without --dry-run:")
-            print(f"   delete-dead-code --limit {args.limit} {args.input_file or '<input>'}")
-    else:
-        print(f"\n❌ Failed: {result.get('message', 'Unknown error')}")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error: Failed to trigger workflow", file=sys.stderr)
+        if e.stderr:
+            print(f"   {e.stderr}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Make sure you have:", file=sys.stderr)
+        print("  - Write access to the repository", file=sys.stderr)
+        print("  - Valid GitHub CLI authentication (gh auth status)", file=sys.stderr)
         return 1
-
-    print("\n" + "=" * 60)
-    return 0
+    except FileNotFoundError:
+        print(f"❌ Error: gh CLI not found", file=sys.stderr)
+        print("   Install GitHub CLI: https://cli.github.com", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

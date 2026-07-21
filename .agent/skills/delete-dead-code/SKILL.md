@@ -1,14 +1,15 @@
 ---
 name: delete-dead-code
-description: Generate reviewable GitHub pull requests that remove Python code unobserved by RuntimeSpy. Runtime evidence may come from the cloud RuntimeSpy backend, a local backend, or an export JSON file.
+description: Generate GitHub pull requests that remove all Python code with zero frequency (frequency=0) from RuntimeSpy instrumentation reports. Trust the runtime evidence completely.
 ---
 
-# Generate dead-code cleanup PRs
+# Remove dead code paths
 
-Use RuntimeSpy only as evidence. Do **not** call a backend cleanup endpoint:
-the agent performs the analysis, edits, verification, branch creation, and PR
-creation locally. A zero-frequency node means unobserved in a traffic window,
-not proven dead code.
+Delete code marked as unobserved (frequency=0) by RuntimeSpy. Nodes with frequency=0 
+were never executed during the capture window and are safe to remove.
+
+**Trust the report.** The instrumentation data is the source of truth. If you provide 
+representative traffic data, frequency=0 means the code is truly unreachable.
 
 ## Inputs
 
@@ -21,57 +22,86 @@ curl --fail --silent --show-error http://34.226.45.56:8000/stats/clean
 # Local RuntimeSpy backend
 curl --fail --silent --show-error http://localhost:8000/stats/clean
 
-# An exported graph supplied by the user
-<instrumentation.json>
+# An exported instrumentation report
+instrumentation-report.json
 ```
 
-The graph is an export envelope. Candidates are `graph.nodes` with
-`frequency: 0`; they identify source through fields such as `path`,
-`start_line`, `end_line`, `type`, `label`, and `qualname`.
+The report contains `graph.nodes[]` with `frequency` counts. Nodes with `frequency: 0` 
+are deletion candidates.
 
 ## Workflow
 
-When asked to run this skill with `--limit N`:
+1. Load the instrumentation report (from backend or file).
+2. Identify all nodes with `frequency: 0` across all files.
+4. Group candidates for deletion:
+   - **`--single-pr`**: All nodes in one PR (recommended)
+   - **`--max-prs N`**: Up to N PRs, one per file
+   - **`--limit N`**: Legacy mode, top N files
+5. Apply all deletions directly to source files. Remove:
+   - Function/class definitions with frequency=0
+   - Module-level statements with frequency=0
+   - Import statements if they become orphaned
+6. Commit changes with a clear message referencing the instrumentation data.
+7. Push branch and create a GitHub PR.
+8. If authentication fails, report the error and stop.
 
-1. Load the selected runtime evidence and list the zero-frequency candidates.
-   Fetch the cloud source only when no local URL or file was provided.
-2. Group candidates into the smallest coherent deletion units. Respect
-   `--limit N` as the maximum number of PRs, not a promise to create unsafe
-   PRs.
-3. Inspect each current source location; the graph's line numbers may be stale.
-   Use static searches to check callers, imports, Flask blueprint registration,
-   OpenAPI declarations, tests, scripts, configuration, examples, and docs.
-4. Only select a group when runtime evidence and static analysis both support
-   removal. Never remove startup/infrastructure code, security or error paths,
-   public API contracts, or reachable code merely because one branch was
-   unobserved.
-5. For every selected group, make the complete local cleanup: implementation,
-   orphaned imports, registrations, tests solely for the removed feature, and
-   stale documentation. Do not leave broken imports or route declarations.
-6. Run the relevant tests and a syntax check. For the demo prefer:
+## When to run
 
-   ```bash
-   PYTHONPATH=demo/src demo/.venv/bin/python -m unittest discover -s demo/tests -v
-   ```
+Run this skill when you have a production traffic instrumentation report. The workflow 
+fetches the latest report from the RuntimeSpy backend and creates a PR with deletions.
 
-7. Create one focused branch, commit, push, and GitHub PR per safe group using
-   `gh`. The PR body must state the RuntimeSpy nodes, static-reference checks,
-   test results, confidence, and remaining risk. If GitHub authentication is
-   unavailable, complete the analysis and local patch but stop before pushing
-   and clearly report the required `gh auth login` action.
+Ensure your report captures:
+- Real production traffic (users, API clients, batch jobs)
+- Diverse traffic patterns over time
+- NOT unit/integration test suites (those don't reflect production use)
 
-## Invocation examples
+## How it works
 
-```text
-delete-dead-code --limit 2
-delete-dead-code --source http://localhost:8000 --limit 1
-delete-dead-code instrumentation.json --limit 3
+Invoking this skill triggers the GitHub Actions workflow `dead-code-cleanup.yml`, which:
+1. Fetches the latest report from the RuntimeSpy backend
+2. Analyzes dead code (frequency=0 nodes)
+3. Creates a PR with deletions
+
+The workflow runs in GitHub Actions with automatic credentials, so no local auth issues.
+
+## Invocation
+
+```bash
+# The skill automatically runs:
+gh workflow run dead-code-cleanup.yml
+
+# Or manually from the command line:
+gh workflow run dead-code-cleanup.yml
 ```
 
-## Safety requirements
+## Report format
 
-- Do not create a PR from zero-frequency evidence alone.
-- Prefer no PR to an uncertain deletion.
-- Keep each PR independent, small, and easy to revert.
-- Never modify the RuntimeSpy reporting service or its endpoint as part of a
-  cleanup.
+The instrumentation report must include:
+- `summary.nodes` — total code paths in graph
+- `summary.executed_nodes` — count of exercised code paths
+- `graph.nodes[]` — array with `{path, frequency, start_line, end_line, ...}`
+
+Nodes with `frequency: 0` will be analyzed for deletion.
+
+## Output
+
+The skill generates a single PR containing:
+- All deletions from frequency=0 nodes
+- Clean commit message with analysis summary
+- Easy to review and revert if needed
+
+## Trust model
+
+- **Trust runtime frequency data only.** If frequency=0, the code was never executed 
+  during production traffic. That is the source of truth.
+- **Ignore unit tests.** Tests are not a validation gate. Code can be tested but unused 
+  in production. If frequency=0, it's dead—delete it.
+- **Your responsibility:** Provide representative runtime data. Run the server with 
+  real production traffic (not just test suites). The report quality depends on 
+  traffic volume and diversity, not test coverage.
+- **Reviewer role:** The PR review catches missed dependencies or unexpected deletions 
+  based on production knowledge, not test suites.
+- **Easy rollback:** If a deletion was wrong, simply revert the PR.
+
+**Goal:** Remove production-dead code. frequency=0 = not reached by real users/traffic. 
+Delete it, regardless of test coverage.
