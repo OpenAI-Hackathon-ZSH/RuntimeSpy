@@ -1,0 +1,77 @@
+{
+  "status": "success",
+  "message": "Analyzed 272 dead nodes, created 5 groups",
+  "summary": {
+    "total_nodes": 726,
+    "executed_nodes": 454,
+    "dead_nodes": 272,
+    "files_affected": 13
+  },
+  "groups": [
+    {
+      "file": "src/commerce_demo/api/admin.py",
+      "dead_nodes": 4,
+      "deletions": [
+        {
+          "start_line": 1,
+          "end_line": 83
+        }
+      ],
+      "total_lines": 83,
+      "confidence": 95,
+      "risk": 2
+    },
+    {
+      "file": "src/commerce_demo/api/catalog.py",
+      "dead_nodes": 23,
+      "deletions": [
+        {
+          "start_line": 1,
+          "end_line": 174
+        }
+      ],
+      "total_lines": 174,
+      "confidence": 95,
+      "risk": 2
+    },
+    {
+      "file": "src/commerce_demo/api/common.py",
+      "dead_nodes": 4,
+      "deletions": [
+        {
+          "start_line": 1,
+          "end_line": 33
+        }
+      ],
+      "total_lines": 33,
+      "confidence": 95,
+      "risk": 2
+    },
+    {
+      "file": "src/commerce_demo/api/orders.py",
+      "dead_nodes": 27,
+      "deletions": [
+        {
+          "start_line": 1,
+          "end_line": 123
+        }
+      ],
+      "total_lines": 123,
+      "confidence": 95,
+      "risk": 2
+    },
+    {
+      "file": "src/commerce_demo/container.py",
+      "dead_nodes": 4,
+      "deletions": [
+        {
+          "start_line": 1,
+          "end_line": 41
+        }
+      ],
+      "total_lines": 41,
+      "confidence": 95,
+      "risk": 2
+    }
+  ]
+}
