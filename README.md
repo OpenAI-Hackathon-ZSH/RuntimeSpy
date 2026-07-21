@@ -5,6 +5,17 @@ unused Python logic. It records how often every logical control-flow node in a
 selected source tree executes, then exports the project as a graph that an agent
 or visualization tool can inspect.
 
+## Built with Codex & GPT-5.6
+
+We used **Codex and GPT-5.6** to build **RuntimE.Razor** across three separate
+codebases, running three Codex sessions in parallel so we could develop them
+simultaneously.
+
+For lightweight tasks such as UI updates and copy changes, we used GPT-5.6 in
+light mode for fast iteration. For complex work, including AST instrumentation
+and system-wide refactoring, we used Codex-5.6 advanced mode, which could reason
+deeply and complete difficult tasks with high accuracy.
+
 ## Why RuntimeSpy
 
 AI coding agents are good at adding code, but much less certain about removing
