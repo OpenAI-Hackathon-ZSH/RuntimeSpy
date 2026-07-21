@@ -26,7 +26,6 @@ def build_container(config: dict[str, object]) -> CommerceContainer:
         allow_backorders=bool(config.get("ALLOW_BACKORDERS", True)),
     )
     risk = RiskService(
-        store,
         review_threshold=int(config.get("RISK_REVIEW_THRESHOLD", 45)),
         block_threshold=int(config.get("RISK_BLOCK_THRESHOLD", 75)),
     )
